@@ -1,0 +1,35 @@
+[
+  {
+    "name": "CNN Base",
+    "accuracy": 0.509090909090909,
+    "auc_roc": 0.5363651633492903,
+    "f1_macro": 0.2248995983935743,
+    "sensitivity_per_class": {
+      "Benigno": 0.0,
+      "Maligno": 1.0,
+      "Normal": 0.0
+    }
+  },
+  {
+    "name": "CNN + Augmentation",
+    "accuracy": 0.38181818181818183,
+    "auc_roc": 0.5027484244726698,
+    "f1_macro": 0.1842105263157895,
+    "sensitivity_per_class": {
+      "Benigno": 0.0,
+      "Maligno": 0.0,
+      "Normal": 1.0
+    }
+  },
+  {
+    "name": "Transfer Learning",
+    "accuracy": 0.7090909090909091,
+    "auc_roc": 0.9133896356896668,
+    "f1_macro": 0.6291625615763546,
+    "sensitivity_per_class": {
+      "Benigno": 0.5,
+      "Maligno": 0.75,
+      "Normal": 0.7142857142857143
+    }
+  }
+]

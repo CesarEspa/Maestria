@@ -1,0 +1,11 @@
+{
+  "name": "SVM (HOG) \u2014 L\u00ednea Base",
+  "accuracy": 1.0,
+  "auc_roc": 1.0,
+  "f1_macro": 1.0,
+  "sensitivity_per_class": {
+    "Benigno": 1.0,
+    "Maligno": 1.0,
+    "Normal": 1.0
+  }
+}

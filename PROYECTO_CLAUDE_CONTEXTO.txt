@@ -1,0 +1,492 @@
+====================================================================
+PROYECTO CLAUDE - CONTEXTO COMPLETO
+TFM: Detección y Clasificación Automática de Cáncer de Pulmón en
+Imágenes de TC mediante Redes Neuronales Convolucionales y Aumento
+de Datos
+====================================================================
+
+Para quién es este archivo:
+  1. Para Claude (o cualquier IA) que retome este proyecto en una
+     sesión nueva sin haber visto nada de lo anterior.
+  2. Para César (el autor) como resumen propio de todo lo hecho.
+  3. Como material base para redactar el documento TFM: metodología,
+     resultados, discusión, limitaciones y conclusiones.
+
+No es el README técnico (ese explica cómo instalar y ejecutar el
+código). Este archivo explica QUÉ se hizo, QUÉ se encontró, y QUÉ
+significa, con el detalle necesario para escribir el documento.
+
+
+====================================================================
+1. QUIÉN Y PARA QUÉ
+====================================================================
+
+Autor: César Libardo España Salguero, Ingeniero en Sistemas.
+Programa: Máster Oficial en Inteligencia Artificial (Università G.
+Marconi / AICAD Business School).
+
+Título del TFM:
+"Detección y Clasificación Automática de Cáncer de Pulmón en
+Imágenes de Tomografía Computarizada mediante Redes Neuronales
+Convolucionales y Aumento de Datos"
+
+Objetivo general:
+Desarrollar y evaluar un sistema de clasificación automática de
+imágenes de TC de tórax en las categorías Normal, Benigno y Maligno,
+basado en CNNs y técnicas de aumento de datos, orientado al apoyo
+del proceso de cribado en servicios de radiología.
+
+Objetivos específicos:
+  - Preprocesar y analizar el dataset IQ-OTH/NCCD (normalización,
+    partición estratificada 70/15/15, data augmentation).
+  - Diseñar, entrenar y comparar 3 arquitecturas: CNN base, CNN con
+    augmentation, y transfer learning (EfficientNetB0).
+  - Evaluar con sensibilidad, especificidad, exactitud, AUC-ROC y
+    matriz de confusión; contrastar con línea base SVM (HOG).
+  - Generar Grad-CAM sobre el mejor modelo y analizar su
+    aplicabilidad en un flujo de radiología.
+
+Encuadre importante: el sistema se presenta como herramienta de
+APOYO al diagnóstico (CADe/CADx), nunca como sustituto del médico.
+Esto debe quedar explícito en la introducción y conclusiones del
+documento TFM.
+
+
+====================================================================
+2. EL DATASET
+====================================================================
+
+IQ-OTH/NCCD Lung Cancer Dataset (Kaggle), TC de tórax recopiladas
+por el Hospital Especializado de Oncología de Irak (IOSH) y el
+Centro Nacional de Cáncer y Enfermedades del Tórax (NCCD).
+
+  Clase                  N imágenes    %
+  Benigno (Bengin cases)      120     10.9%
+  Maligno (Malignant cases)   561     51.1%
+  Normal (Normal cases)       416     37.9%
+  TOTAL                      1097    100%
+
+Carpetas reales en disco (nombres tal cual vienen del dataset,
+incluida la errata "Bengin"):
+  Datos/The IQ-OTHNCCD lung cancer dataset/Bengin cases/
+  Datos/The IQ-OTHNCCD lung cancer dataset/Malignant cases/
+  Datos/The IQ-OTHNCCD lung cancer dataset/Normal cases/
+
+Características:
+  - Dataset claramente DESBALANCEADO (Benigno tiene menos de la
+    cuarta parte de imágenes que Maligno). Se mitigó con
+    class_weight="balanced" en todos los modelos de Keras.
+  - Tamaños originales heterogéneos (ancho 506-801 px, alto
+    331-512 px). Se normalizó todo a 224x224 px.
+  - Nombres de archivo tipo "Malignant case (37).jpg": son solo un
+    índice secuencial, NO un identificador de paciente.
+
+LIMITACIÓN CRÍTICA DEL DATASET (leer con atención, es el punto
+metodológico más importante de todo el proyecto):
+
+Las imágenes exportadas en Kaggle NO incluyen identificador de
+paciente ni metadatos DICOM. Es sabido que en datasets de TC un
+mismo paciente aporta muchos cortes axiales consecutivos, muy
+parecidos entre sí. Como no hay forma de agrupar por paciente con
+los datos disponibles, la partición train/val/test de este proyecto
+se hizo A NIVEL DE IMAGEN, no a nivel de paciente. Esto es una
+fuente de "fuga de datos" (data leakage): es probable que cortes
+casi idénticos del mismo paciente queden repartidos entre
+entrenamiento y prueba, inflando artificialmente las métricas de
+generalización. La evidencia empírica de esto está en la sección 5
+(la SVM llega a 100% de exactitud, algo no creíble para un método
+clásico en un problema médico real). Esto DEBE mencionarse de forma
+explícita en la sección de limitaciones del TFM, y matizar cualquier
+afirmación de "el modelo generaliza bien".
+
+
+====================================================================
+3. QUÉ SE CONSTRUYÓ, EN ORDEN CRONOLÓGICO
+====================================================================
+
+FASE 1 — Pipeline de scripts (src/01_eda.py a src/08_baseline_ml.py)
+----------------------------------------------------------------------
+  01_eda.py            Análisis exploratorio: distribución de clases,
+                        muestras por clase, distribución de tamaños,
+                        distribución de intensidad de píxeles.
+  02_preprocessing.py   Carga las 1097 imágenes, resize 224x224
+                        (LANCZOS), normaliza a [0,1], y hace el split
+                        estratificado 70/15/15 (semilla fija SEED=42).
+                        Guarda todo en outputs/splits/dataset_splits.npz.
+  03_train_cnn_base.py  CNN de 3 bloques Conv2D (32->64->128) +
+                        BatchNorm + MaxPooling + GAP + Dense(256), SIN
+                        aumento de datos.
+  04_train_cnn_aug.py   Misma arquitectura, CON aumento de datos
+                        (flip, rotación, zoom, contraste, traslación)
+                        integrado como capa dentro del modelo.
+  05_train_transfer.py  Transfer learning con EfficientNetB0
+                        preentrenada en ImageNet. Fase 1: base
+                        congelada, solo se entrena la cabeza (hasta 15
+                        épocas). Fase 2: fine-tuning de las últimas 30
+                        capas de EfficientNet (hasta 30 épocas más).
+  06_evaluate.py         Evalúa los 3 modelos Keras sobre el conjunto
+                        de TEST (165 imágenes): exactitud, AUC-ROC,
+                        F1, sensibilidad por clase, matrices de
+                        confusión, tabla comparativa.
+  07_gradcam.py          Genera mapas de activación Grad-CAM sobre el
+                        mejor modelo disponible (prioriza transfer
+                        learning > CNN aug > CNN base).
+  08_baseline_ml.py      Línea base de ML clásico: extrae
+                        características HOG de cada imagen y entrena
+                        un SVM (kernel RBF) como punto de comparación
+                        frente a deep learning.
+
+Todo el pipeline se ejecutó de principio a fin sobre CPU (sin GPU
+disponible en el equipo de desarrollo). Tiempos aproximados: CNN base
+y CNN+aug, 10-30 min cada una; transfer learning, ~6-10 min (fue
+sorprendentemente rápido); SVM+HOG, 1-2 min.
+
+FASE 2 — Primera app web: Streamlit (src/app.py)
+----------------------------------------------------------------------
+Para no depender solo de la terminal. Permite:
+  - Lanzar el entrenamiento de cualquiera de los 4 modelos con un
+    clic, y ver progreso en vivo (época actual, curvas de
+    loss/accuracy, fase de entrenamiento).
+  - Subir una imagen de TC o elegir una de ejemplo del dataset, y
+    clasificarla con el modelo que se elija, viendo probabilidades
+    por clase y el mapa Grad-CAM.
+  - Ver la tabla comparativa de métricas de los 4 modelos.
+
+Para esto se construyeron módulos reutilizables:
+  - progress_tracker.py: un Callback de Keras que escribe el
+    progreso del entrenamiento (época, loss, accuracy) a un JSON en
+    outputs/progress/<modelo>.json, que la app va leyendo.
+  - model_utils.py: preprocesa imágenes igual que 02_preprocessing.py
+    y ejecuta inferencia con cualquiera de los 4 modelos.
+  - gradcam_utils.py: genera el mapa de calor Grad-CAM y lo
+    superpone sobre la imagen original.
+
+FASE 3 — Segunda app web: frontend propio + backend FastAPI
+(src/api.py + src/frontend/)
+----------------------------------------------------------------------
+Misma funcionalidad que la app de Streamlit, pero como una interfaz
+HTML/CSS/JS propia (sin frameworks, sin build step) que habla con
+una API REST hecha en FastAPI, en vez de todo-en-uno como Streamlit.
+Se decidió así para tener una base más fácil de extender en el
+futuro (autenticación, base de datos con historial de
+clasificaciones, despliegue en un servidor real, etc.) sin tener que
+reescribir la lógica de negocio.
+
+Para evitar que las dos apps divergieran o mostraran números
+distintos, se extrajo la lógica compartida a dos módulos nuevos:
+  - training_control.py: lista de los 4 modelos entrenables, cómo
+    lanzarlos/detenerlos como subprocesos, y cómo determinar su
+    estado actual (idle/running/completed/failed/stale).
+  - results_utils.py: carga de métricas y figuras de evaluación.
+
+La API expone, entre otros: GET /api/models (estado de los 4
+modelos), POST /api/models/{key}/train y /stop, GET /api/samples,
+POST /api/classify (subir imagen) y /api/classify_sample (ejemplo
+del dataset), GET /api/results, GET /api/figures y /api/gradcam_grid.
+El backend sirve también el frontend estático, todo en un único
+puerto (sin problemas de CORS).
+
+FASE 4 — Iteración sobre la pestaña "Clasificar imagen"
+----------------------------------------------------------------------
+Se probó primero añadir una tercera pestaña con una rejilla de
+imágenes tomadas directamente del conjunto de TEST (165 imágenes),
+para poder clasificar imágenes que el modelo garantizadamente no
+vio en entrenamiento. El usuario (César) no quiso esa rejilla
+visualmente, así que se revirtió a las 2 pestañas originales ("Subir
+mi imagen" / "Usar imagen de ejemplo") y se sustituyó por un botón
+único, "Elegir imagen aleatoria", que toma una imagen al azar del
+30% de datos NO usado en entrenamiento (validación + test
+combinados, 330 imágenes en total) para comprobar rápidamente "si el
+modelo está bien entrenado" sobre datos nunca vistos.
+
+ESTADO ACTUAL: los 4 modelos están entrenados y evaluados; las 2
+apps web funcionan y fueron probadas de extremo a extremo, incluida
+automatización real de navegador (Playwright/Chromium headless), no
+solo pruebas manuales.
+
+
+====================================================================
+4. LOS 4 MODELOS: ARQUITECTURA Y RESULTADOS DETALLADOS
+====================================================================
+
+Todos los modelos de Keras usan class_weight="balanced",
+EarlyStopping sobre val_loss (restore_best_weights=True) y
+ReduceLROnPlateau. Métricas medidas sobre el conjunto de TEST
+(165 imágenes: 18 Benigno, 84 Maligno, 63 Normal), generadas por
+06_evaluate.py y 08_baseline_ml.py.
+
+--------------------------------------------------------------------
+4.1 CNN Base (sin aumento de datos)
+--------------------------------------------------------------------
+Arquitectura: 3 bloques Conv2D(32->64->128) + BatchNormalization +
+MaxPooling + Dropout, GlobalAveragePooling2D, Dense(256), Dense(3,
+softmax). ~321,700 parámetros. Learning rate 1e-3.
+
+RESULTADO: colapso de entrenamiento. La exactitud en entrenamiento
+sube con normalidad (hasta ~78%), pero la pérdida de validación
+crece de forma monótona desde la primera época (de 1.23 en época 1 a
+10.64 en época 8) mientras la exactitud de validación queda
+CONGELADA en un único valor. El modelo termina prediciendo SIEMPRE
+"Maligno" para cualquier imagen de test.
+
+Métricas en test: Exactitud 0.5091, AUC-ROC 0.5364, F1 macro 0.2249.
+Sensibilidad: Benigno 0.00, Maligno 1.00, Normal 0.00.
+(0.5091 coincide exactamente con la proporción de Maligno en test:
+84/165 = 0.509 -> confirma que el modelo solo predice esa clase.)
+
+EarlyStopping (paciencia 7) restaura los pesos de la época 1, la
+única con pérdida de validación razonable, porque todas las
+posteriores empeoran.
+
+--------------------------------------------------------------------
+4.2 CNN + Augmentation
+--------------------------------------------------------------------
+Misma arquitectura que la CNN base, con una capa de augmentation
+integrada en el modelo (RandomFlip horizontal y vertical,
+RandomRotation, RandomZoom, RandomContrast, RandomTranslation).
+
+RESULTADO: el mismo patrón de colapso que la CNN base, pero
+prediciendo siempre "Normal" en vez de "Maligno".
+
+Métricas en test: Exactitud 0.3818, AUC-ROC 0.5027, F1 macro 0.1842.
+Sensibilidad: Benigno 0.00, Maligno 0.00, Normal 1.00.
+(0.3818 = 63/165, la proporción de Normal en test.)
+
+Se investigó si esto se debía a un bug: en efecto se encontró uno
+real (ver sección 5.1), pero tras corregirlo y reentrenar desde cero
+el colapso se reprodujo IDÉNTICO. Es decir, el bug era real y se
+corrigió, pero NO es la causa de la inestabilidad.
+
+Hipótesis de causa raíz (no confirmada, requiere más experimentos):
+la combinación de BatchNormalization en cada bloque + class_weight
+agresivo (peso x3.04 para Benigno) + learning rate inicial
+relativamente alto (1e-3) + muy pocos pasos por época (24, dado el
+tamaño del dataset) produce una optimización inestable desde el
+arranque: las estadísticas de BatchNorm no llegan a estabilizarse
+con tan pocos batches, y el modelo cae rápido en un mínimo local
+donde predecir la clase mayoritaria/más fácil minimiza la pérdida de
+entrenamiento a costa de la generalización.
+
+--------------------------------------------------------------------
+4.3 Transfer Learning (EfficientNetB0) — EL MEJOR MODELO
+--------------------------------------------------------------------
+EfficientNetB0 preentrenada en ImageNet + cabeza personalizada
+(GlobalAveragePooling2D, Dropout, Dense(256), Dropout, Dense(3,
+softmax)). Fase 1: base congelada, solo entrena la cabeza (learning
+rate 1e-4, hasta 15 épocas). Fase 2: fine-tuning de las últimas 30
+capas de EfficientNet (learning rate 1e-5, hasta 30 épocas más).
+
+RESULTADO: mucho más estable que los dos modelos anteriores. NO
+colapsa a una sola clase.
+
+Métricas en test: Exactitud 0.7091, AUC-ROC 0.9134, F1 macro 0.6292.
+Sensibilidad: Benigno 0.50, Maligno 0.75, Normal 0.71.
+
+Hipótesis de por qué es estable: al partir de una base preentrenada
+con sus estadísticas de BatchNormalization ya calibradas (y
+congeladas en la Fase 1), evita la inestabilidad de optimización que
+afecta a las CNN entrenadas desde cero con este dataset pequeño y
+desbalanceado.
+
+Nota importante: la sensibilidad en Benigno (0.50) sigue siendo la
+más baja de las 3 clases, coherente con que es la clase minoritaria
+del dataset (10.9% del total, solo 18 imágenes en test). Esto es
+clínicamente relevante: un falso negativo en un caso maligno o
+benigno tiene consecuencias muy distintas a un falso negativo en
+"normal" — la sensibilidad por clase, no solo la exactitud global,
+debe ser el criterio principal de evaluación en este dominio.
+
+Este modelo es EL RECOMENDADO como resultado principal del TFM, con
+las salvedades de la sección 6 (limitaciones) sobre fuga de datos.
+
+--------------------------------------------------------------------
+4.4 SVM (HOG) — Línea base de ML clásico
+--------------------------------------------------------------------
+Extracción de características HOG (9 orientaciones, celdas 16x16,
+bloques 2x2) sobre la imagen en escala de grises, + SVM kernel RBF
+con class_weight="balanced".
+
+RESULTADO: exactitud, AUC-ROC y F1 PERFECTOS (1.00) en el conjunto
+de test. Sensibilidad 1.00 en las 3 clases.
+
+ESTO NO ES UN ÉXITO, ES UNA SEÑAL DE ALARMA. Para un clasificador
+clásico sin aprendizaje de representaciones, en un problema médico
+de 3 clases, un resultado perfecto no es creíble como capacidad de
+generalización real. Es la evidencia empírica más clara del problema
+de fuga de datos descrito en la sección 2: al no existir
+identificador de paciente, es muy probable que cortes de TC casi
+idénticos del mismo paciente aparezcan tanto en entrenamiento como
+en prueba, permitiendo que el modelo memorice la apariencia de un
+paciente en vez de aprender patrones patológicos generalizables.
+
+Este resultado se reporta íntegramente por transparencia
+metodológica, pero NO debe leerse como que "SVM + HOG supera a las
+CNN". La comparación correcta, imposible de hacer con los datos
+disponibles, requeriría un split a nivel de paciente.
+
+--------------------------------------------------------------------
+4.5 Tabla resumen
+--------------------------------------------------------------------
+Modelo                  Exactitud  AUC-ROC  F1 Macro  Sens.Benigno Sens.Maligno Sens.Normal
+CNN Base                 0.5091    0.5364   0.2249    0.00         1.00         0.00
+CNN + Augmentation       0.3818    0.5027   0.1842    0.00         0.00         1.00
+Transfer Learning (EffNet) 0.7091  0.9134   0.6292    0.50         0.75         0.71   <- mejor modelo fiable
+SVM (HOG) linea base      1.0000   1.0000   1.0000    1.00         1.00         1.00   <- sospechoso de leakage
+
+
+====================================================================
+5. INCIDENCIAS TÉCNICAS ENCONTRADAS Y RESUELTAS DURANTE EL DESARROLLO
+====================================================================
+(Útil para la sección de Metodología del TFM: demuestra rigor en el
+proceso, no solo en el resultado final.)
+
+5.1 Bug real: augmentation activa incluso en evaluación/inferencia
+--------------------------------------------------------------------
+En 04_train_cnn_aug.py y 05_train_transfer.py, la capa de
+augmentation se conectaba con training=True fijado explícitamente al
+construir el grafo del modelo. En Keras, cuando se fija ese
+argumento explícitamente en la llamada a una capa, ese valor queda
+"clavado" para ese nodo del grafo y YA NO sigue el modo del modelo
+completo — es decir, la augmentation se seguía aplicando incluso
+dentro de model.evaluate() o model.predict(), no solo durante el
+entrenamiento. Se corrigió quitando ese argumento explícito (para
+que el modo se propague correctamente desde la llamada al modelo).
+
+Impacto medido: en la CNN+Augmentation no cambió el resultado (el
+colapso se reprodujo igual). En Transfer Learning SÍ mejoró de forma
+medible: AUC-ROC subió de 0.907 a 0.913, y la sensibilidad en la
+clase minoritaria (Benigno) subió de 0.11 a 0.50 — evidencia de que
+evaluar con augmentation activo introducía ruido que perjudicaba
+especialmente a la clase con menos ejemplos.
+
+5.2 Bug real: Grad-CAM no funcionaba con el modelo de transfer learning
+--------------------------------------------------------------------
+En Keras 3, reconstruir un keras.Model recortado desde model.inputs
+hasta la salida de un submodelo anidado (la base de EfficientNet
+dentro del modelo de transfer learning) falla con el error "Output
+with path 0 is not connected to inputs". Se solucionó reproduciendo
+el forward pass manualmente, capa por capa, dentro de un
+GradientTape, en vez de intentar reconstruir el grafo (ver
+gradcam_utils.py).
+
+5.3 Hallazgo tras corregir 5.2: Grad-CAM en transfer learning no es informativo
+--------------------------------------------------------------------
+Una vez arreglado el bug técnico, se encontró que el mapa de calor
+crudo de Grad-CAM para el modelo de transfer learning es EXACTAMENTE
+CERO en 48 de las 49 celdas de la rejilla 7x7 de activaciones, con
+un único píxel (siempre en la misma esquina) saturado a 1.0 — este
+patrón se repite idéntico para imágenes de entrada completamente
+distintas. Es decir, el mapa Grad-CAM en este modelo NO es
+informativo: no resalta regiones anatómicas relevantes.
+
+Explicación más plausible: un fenómeno conocido en redes
+convolucionales/transformers preentrenadas, donde ciertos canales
+desarrollan activaciones de magnitud anormalmente alta y
+aproximadamente constantes en posiciones fijas (a menudo por efectos
+de padding en convoluciones con stride), que dominan el promedio
+ponderado por gradiente de Grad-CAM y eclipsan las contribuciones
+más pequeñas pero semánticamente relevantes del resto del mapa. Es
+un límite conocido del Grad-CAM "clásico" frente a ciertas
+arquitecturas preentrenadas, no un error de implementación.
+
+IMPLICACIÓN PARA EL TFM: la explicabilidad de este sistema mediante
+Grad-CAM es limitada para el mejor modelo. Esto debe mencionarse
+honestamente en la sección de resultados/discusión, y como línea de
+trabajo futuro (probar Grad-CAM++, o excluir/normalizar canales
+atípicos antes de generar el mapa).
+
+5.4 Otros problemas menores resueltos
+--------------------------------------------------------------------
+  - UnicodeEncodeError en Windows: la consola por defecto (cp1252)
+    no puede imprimir caracteres como flechas o checks que usan los
+    scripts. Se soluciona fijando PYTHONIOENCODING=utf-8 antes de
+    ejecutar cualquier script.
+  - Conflicto de dependencias: instalar streamlit sube "protobuf" a
+    una versión incompatible con TensorFlow (TensorFlow exige <5,
+    streamlit pide >=5). Se resolvió fijando protobuf>=3.20.3,<5 en
+    requirements.txt; en la práctica ambas librerías funcionan bien
+    con esa versión pese al aviso de conflicto de pip.
+  - Nombre de archivo con doble guion bajo (bug cosmético) en
+    06_evaluate.py al generar el nombre del archivo de la matriz de
+    confusión de "CNN + Augmentation"; corregido.
+  - Se descubrió, mientras se probaba la app con pruebas
+    automatizadas, que mover/eliminar la carpeta de progreso
+    (outputs/progress/) MIENTRAS un entrenamiento real está
+    corriendo hacía que el entrenamiento se cayera con
+    FileNotFoundError. Se corrigió progress_tracker.py para que
+    cualquier fallo al escribir el progreso (que es solo para la
+    interfaz) se ignore en silencio y NUNCA interrumpa el
+    entrenamiento real del modelo.
+
+
+====================================================================
+6. LIMITACIONES (para la sección correspondiente del TFM)
+====================================================================
+
+  1. FUGA DE DATOS POR AUSENCIA DE IDENTIFICADOR DE PACIENTE (la más
+     importante — ver sección 2). El split se hizo a nivel de imagen,
+     no de paciente, lo que probablemente infla las métricas de
+     generalización, especialmente las de la SVM.
+  2. Tamaño de dataset reducido para deep learning (1097 imágenes,
+     767 para entrenamiento): favorece overfitting y limita la
+     capacidad de las arquitecturas entrenadas desde cero.
+  3. Desbalance de clases (Benigno: 10.9% del total). Mitigado con
+     class_weight, pero sin remuestreo ni generación sintética
+     adicional.
+  4. Un único origen de datos (hospitales de Irak, dataset de 2019).
+     No se evaluó generalización a otros equipos/protocolos/
+     poblaciones.
+  5. Entrenamiento sin GPU y con presupuesto de tiempo limitado: los
+     hiperparámetros no se optimizaron exhaustivamente (ver la
+     inestabilidad de las CNN entrenadas desde cero, sección 4.1-4.2).
+  6. No es un dispositivo médico. Prototipo académico sin validación
+     clínica, no certificado, no debe usarse para decisiones de
+     diagnóstico o tratamiento reales.
+
+
+====================================================================
+7. TRABAJO FUTURO (líneas a mencionar en conclusiones)
+====================================================================
+
+  - Reconstruir un split a nivel de PACIENTE (requiere acceso a
+    metadatos DICOM originales, no solo a las imágenes exportadas de
+    Kaggle) y volver a medir todas las métricas — se espera una
+    caída sustancial de exactitud, especialmente en la SVM.
+  - Ajustar hiperparámetros (learning rate, regularización,
+    arquitectura) de la CNN base y CNN+augmentation para resolver la
+    inestabilidad de entrenamiento observada.
+  - Validación cruzada (k-fold) en vez de un único split, dado el
+    tamaño reducido del dataset.
+  - Evaluar en un conjunto externo (otro hospital/dataset público)
+    para medir generalización real.
+  - Explorar arquitecturas 3D que aprovechen la información
+    volumétrica de cortes consecutivos, en vez de clasificar cortes
+    2D de forma independiente.
+  - Mejorar la explicabilidad: probar Grad-CAM++ u otras variantes
+    menos sensibles a canales de activación atípica (ver 5.3).
+
+
+====================================================================
+8. QUÉ HAY DISPONIBLE COMO EVIDENCIA / MATERIAL PARA EL DOCUMENTO
+====================================================================
+
+  outputs/figures/          Gráficos EDA, curvas de entrenamiento,
+                             matrices de confusión, tabla comparativa,
+                             JSON con todas las métricas exactas.
+  outputs/gradcam/gradcam_grid.png   Grid de Grad-CAM sobre el mejor
+                             modelo (9 ejemplos, 3 por clase).
+  outputs/models/            Los 4 modelos entrenados guardados en
+                             disco (.keras y .joblib).
+  README.md                  Documentación técnica completa: cómo
+                             instalar, ejecutar el pipeline y usar
+                             las 2 apps web, con la misma tabla de
+                             resultados y el mismo análisis de
+                             hallazgos que este archivo.
+
+Para escribir las secciones de Resultados y Discusión del TFM, la
+sección 4 de este archivo (con las 4 tablas/análisis por modelo) es
+el material base directo. Para Metodología, usar la sección 3
+(pipeline) y las arquitecturas descritas en 4.1-4.4. Para
+Limitaciones, usar la sección 6 tal cual. Para Conclusiones, la
+sección 7 más el hallazgo central de que transfer learning fue
+claramente superior a entrenar desde cero en este dataset pequeño.

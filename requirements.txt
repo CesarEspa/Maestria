@@ -1,0 +1,25 @@
+tensorflow>=2.15.0
+numpy>=1.24.0
+pandas>=2.0.0
+matplotlib>=3.7.0
+seaborn>=0.12.0
+scikit-learn>=1.3.0
+scikit-image>=0.21.0
+Pillow>=10.0.0
+opencv-python>=4.8.0
+joblib>=1.3.0
+
+# App web interactiva #1: Streamlit (entrenamiento en vivo + clasificación)
+streamlit>=1.30.0
+
+# App web interactiva #2: backend FastAPI + frontend HTML/CSS/JS propio
+# (src/api.py + src/frontend/). Misma funcionalidad que la app Streamlit,
+# pero como API REST separada del frontend — más fácil de extender más
+# adelante (auth, base de datos, desplegarla, etc.).
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+
+# TensorFlow requiere protobuf<5; instalar streamlit puede subirlo a >=5.
+# Si eso ocurre, reinstalar con: pip install "protobuf>=3.20.3,<5.0.0dev"
+protobuf>=3.20.3,<5.0.0dev

@@ -1,0 +1,21 @@
+# Dataset de imágenes (154 MB) — se descarga de Kaggle, ver README.
+# https://www.kaggle.com/datasets/hamdallak/the-iqothnccd-lung-cancer-dataset
+Datos/
+
+# Estado de entrenamiento en vivo (JSON) y logs — se regeneran solos
+# cada vez que se lanza un entrenamiento desde alguna de las apps web.
+outputs/progress/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# Editor / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
