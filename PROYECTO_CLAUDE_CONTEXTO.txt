@@ -298,6 +298,41 @@ forma de reiniciar el backend sin arriesgar interrumpir un
 entrenamiento activo en este entorno) — algo a tener en cuenta en
 próximas sesiones de mantenimiento.
 
+FASE 7 — Incidente: reentrenamiento accidental de CNN Base y restauración
+----------------------------------------------------------------------
+El 23/09/2026, al revisar cuántas épocas había usado realmente cada
+modelo, se detectó que outputs/models/cnn_base.keras y
+outputs/figures/curvas_cnn_base.png habían sido sobrescritos por un
+reentrenamiento reciente (mismo botón "Reentrenar" de la app, con el
+presupuesto por defecto de 80 épocas) que volvió a colapsar: paró en
+la época 14 con la accuracy de validación congelada en 10.9%, el
+mismo patrón del Hallazgo/sección 5.1. Las métricas oficiales
+(metricas_comparativas.json, generadas el día anterior) seguían
+mostrando el 84.85% de exactitud documentado, así que hubo un breve
+desajuste entre el archivo del modelo en disco y lo reportado en
+README/este documento.
+
+Se restauró el modelo bueno con "git checkout HEAD -- <archivo>",
+porque outputs/models/ y outputs/figures/ SÍ están versionados en git
+(solo outputs/progress/ está en .gitignore), y el commit 1efd2ac de la
+segunda ronda de entrenamiento (Fase 5) ya contenía el .keras bueno.
+Confirmado con md5sum que el archivo restaurado es byte a byte
+idéntico al de ese commit. Durante la verificación posterior también
+se lanzó por error, vía un comando mal escrito, OTRO reentrenamiento
+de CNN Base; se detectó de inmediato (proceso vivo corriendo
+03_train_cnn_base.py) y se mató con taskkill antes de que llegara a
+guardar nada (el .save() del modelo solo ocurre al final de
+model.fit(), así que no hubo ningún impacto real).
+
+LECCIÓN para futuras sesiones: como outputs/models/ y outputs/figures/
+están versionados en git, cualquier archivo de modelo o figura
+sobrescrito por un reentrenamiento accidental (propio o del usuario)
+es recuperable con "git status outputs/" (para ver qué cambió) seguido
+de "git checkout HEAD -- <archivo>". Es buena práctica comprobarlo
+antes de creer que un resultado documentado sigue siendo válido, sobre
+todo después de que alguien haya usado el botón "Reentrenar"/"Entrenar
+todos" de la app.
+
 ESTADO ACTUAL: los 4 modelos están entrenados y evaluados (3 de ellos
 reentrenados en la segunda ronda de la Fase 5); las 2 apps web
 funcionan y fueron probadas de extremo a extremo, incluida
@@ -330,6 +365,12 @@ softmax). ~321,250 parámetros. Learning rate 1e-4.
 Loss: CategoricalCrossentropy(label_smoothing=0.1) sobre etiquetas
 one-hot. EarlyStopping paciencia 12, hasta 80 épocas.
 
+ÉPOCAS REALES: ~38 (de las 80 posibles; EarlyStopping cortó ahí porque
+val_loss dejó de mejorar 12 épocas seguidas). Cifra leída de
+outputs/figures/curvas_cnn_base.png, no de un registro exacto
+época-a-época — ver el incidente de la Fase 7 sobre por qué ese
+registro original ya no está disponible.
+
 RESULTADO: el colapso de la primera ronda desapareció por completo.
 Convergencia normal, sin explosión de la pérdida de validación.
 
@@ -351,6 +392,11 @@ reducido (RandomFlip horizontal, RandomRotation 0.08, RandomZoom
 0.05, RandomContrast — se quitaron RandomFlip vertical y
 RandomTranslation por no ser transformaciones anatómicamente
 plausibles/seguras para una TC de tórax).
+
+ÉPOCAS REALES: 14 (de las 80 posibles) — la cifra más baja de los 4
+modelos: EarlyStopping cortó casi de inmediato porque val_loss dejó de
+mejorar muy pronto, coherente con que este es el modelo que sigue
+colapsando a nivel de decisión final (ver más abajo).
 
 RESULTADO: mixto. El AUC-ROC mejoró sustancialmente (de 0.503 a
 0.728), pero la exactitud final (0.5091) sigue correspondiendo a un
@@ -390,6 +436,12 @@ rate 1e-4, hasta 15 épocas). Fase 2: fine-tuning de las ÚLTIMAS 50
 CAPAS de EfficientNet (antes 30) (learning rate 1e-5, hasta 50
 épocas, antes 30).
 
+ÉPOCAS REALES: Fase 1 paró en la época 9 de 15 (EarlyStopping). Fase 2
+usó las 50 épocas COMPLETAS de su presupuesto, sin activar el paro
+temprano — señal de que seguía mejorando lentamente hasta el final,
+candidato a un presupuesto aún mayor en trabajo futuro. Total: 59
+épocas efectivas (9 + 50).
+
 RESULTADO: mejoró en todas las métricas respecto a la primera ronda.
 
 Métricas en test: Exactitud 0.8303, AUC-ROC 0.9761, F1 macro 0.7764.
@@ -423,6 +475,10 @@ Extracción de características HOG (9 orientaciones, celdas 16x16,
 bloques 2x2) sobre la imagen en escala de grises, + SVM kernel RBF
 con class_weight="balanced"). Por instrucción explícita del usuario,
 este modelo NO se reentrenó ni se modificó en la segunda ronda.
+
+ÉPOCAS: no aplica. Un SVM no se entrena por descenso de gradiente
+iterativo por épocas — resuelve un problema de optimización convexa
+con una única llamada a .fit(), converge (o falla) de una vez.
 
 RESULTADO (idéntico a la primera ronda): exactitud, AUC-ROC y F1
 PERFECTOS (1.00) en el conjunto de test. Sensibilidad 1.00 en las 3

@@ -333,6 +333,45 @@ desbalance de clases, `EarlyStopping` (paciencia 12) sobre `val_loss` y
 **enteramente en CPU** (ver nota sobre GPU en
 [Instalación](#instalación)).
 
+### ¿Por qué no todos entrenaron el mismo número de épocas?
+
+Las cifras de "hasta 80" o "hasta 50" épocas en la tabla anterior son
+**presupuestos máximos, no el número real de épocas que corrió cada
+modelo**. `EarlyStopping` (paciencia 12: se detiene si `val_loss` no
+mejora durante 12 épocas seguidas, restaurando los pesos de la mejor
+época) corta el entrenamiento en cuanto cada modelo deja de mejorar, y
+ese punto depende de la arquitectura y de si parte de pesos
+preentrenados o no — por eso cada uno se detuvo en un número distinto:
+
+| Modelo | Presupuesto máximo | Épocas reales completadas |
+|---|---:|---:|
+| CNN Base | 80 | ≈ 38 (lectura de `curvas_cnn_base.png`; el registro época a época de esta ejecución concreta ya no está disponible, ver nota abajo) |
+| CNN + Augmentation | 80 | 14 |
+| Transfer Learning — Fase 1 (cabeza congelada) | 15 | 9 |
+| Transfer Learning — Fase 2 (fine-tuning) | 50 | 50 (completó todo el presupuesto, sin activar el paro temprano) |
+| SVM (HOG) | no aplica | no usa épocas — es un SVM clásico, converge con una sola llamada `.fit()`, no con descenso de gradiente iterativo |
+
+La CNN + Augmentation es la que menos épocas aguantó (14): es
+justamente el modelo que sigue colapsando a nivel de decisión final
+(ver [Hallazgo #3](#hallazgos-y-análisis)), así que `val_loss` deja de
+mejorar muy pronto. La Fase 2 de Transfer Learning, en cambio, agotó
+las 50 épocas completas sin activar el paro temprano — señal de que
+seguía mejorando lentamente hasta el final del presupuesto, y quizás
+se beneficiaría de un presupuesto aún mayor (ver
+[Trabajo futuro](#trabajo-futuro)).
+
+> Nota sobre la cifra de CNN Base: el 23/09/2026 se relanzó por
+> accidente un reentrenamiento de este modelo desde la app web (con el
+> mismo presupuesto por defecto de 80 épocas), que sobrescribió
+> temporalmente el archivo del modelo y su curva de entrenamiento con
+> una ejecución que sí colapsó (paró en la época 14, igual que el
+> patrón del Hallazgo #1). Se detectó por el desajuste con las
+> métricas ya evaluadas y se restauró el modelo bueno (84.85% de
+> exactitud) desde el historial de git — el archivo `.keras` actual es
+> el correcto, pero el número exacto de épocas de esa ejecución
+> original ya no puede leerse de un JSON, solo estimarse visualmente
+> de la curva restaurada.
+
 ## Resultados
 
 *(Tabla generada a partir de `outputs/figures/metricas_comparativas.json` y
