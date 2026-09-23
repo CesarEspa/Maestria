@@ -249,11 +249,62 @@ figura) y el classification_report de cada modelo como imagen, y se
 regeneró el grid de Grad-CAM con el nuevo mejor modelo (el problema
 de la esquina saturada, sección 5.3 original, persiste sin cambios).
 
+FASE 6 — Mejoras de UX en el panel de Entrenamiento (solo app FastAPI)
+----------------------------------------------------------------------
+El usuario pidió tres mejoras concretas sobre la pestaña
+"Entrenamiento" de la app FastAPI + frontend propio (src/api.py +
+src/frontend/): que el panel "Ver log del proceso" dejara de cerrarse
+solo cada vez que la página se refresca (cada 3 segundos mientras hay
+algo entrenando), poder elegir el número de épocas antes de lanzar un
+modelo (en vez del valor fijo de config.py), y un botón para lanzar
+los 4 modelos de una sola vez.
+
+Se implementaron los tres, solo en esta app (NO en la app Streamlit,
+que sigue con el flujo original de un único botón "Entrenar" por
+modelo — pendiente como trabajo futuro llevarle los mismos controles):
+  - El estado de qué logs están desplegados ahora vive en el frontend
+    (frontend/app.js, state.openLogs) y se reaplica en cada
+    re-render, en vez de perderse; de paso se limpiaron los códigos
+    de color ANSI que Keras escribe en el log (antes eran ruido
+    visual tipo "[1m", "[32m", invisible mientras el panel se cerraba
+    solo, pero evidente en cuanto se dejó desplegado).
+  - El número de épocas elegido por el usuario se manda al backend
+    como parámetro de query (?epochs=N) en POST /api/models/{key}/train,
+    y los scripts 03/04/05 lo leen vía la variable de entorno
+    TFM_EPOCHS_OVERRIDE (sin tocar config.py). En transfer learning
+    solo afecta a la fase 2 (fine-tuning); la fase 1 se mantiene fija
+    en 15 épocas.
+  - "Entrenar todos los modelos" lanza los 4 en cola SECUENCIAL (uno
+    detrás de otro, no en paralelo) porque el equipo solo tiene CPU y
+    entrenar varios a la vez los haría competir por el mismo
+    procesador. El frontend vigila el estado del modelo actual y
+    lanza el siguiente en cuanto el anterior llega a un estado
+    terminal (completado/fallido/detenido/sin actividad).
+
+Mientras se probaban estos cambios contra la app real (no solo
+revisión de código: se relanzó un entrenamiento real de CNN Base con
+pocas épocas y se probó el ciclo completo lanzar->detener), se
+encontró y corrigió un BUG REAL preexistente en el botón "Detener":
+mataba el proceso correctamente, pero nunca actualizaba el archivo de
+progreso para reflejarlo, así que la tarjeta se quedaba mostrando
+"Entrenando..." con la barra congelada durante hasta 5 minutos (el
+umbral de "sin actividad reciente"), dando la sensación de que la app
+se había colgado aunque el proceso ya estaba muerto. Se corrigió en
+training_control.py y api.py — ver el detalle técnico en la sección
+5.5. También se encontró, como efecto colateral de las pruebas, que
+reiniciar el proceso del servidor de desarrollo puede matar procesos
+de entrenamiento hijos que siguieran corriendo en ese momento (no hay
+forma de reiniciar el backend sin arriesgar interrumpir un
+entrenamiento activo en este entorno) — algo a tener en cuenta en
+próximas sesiones de mantenimiento.
+
 ESTADO ACTUAL: los 4 modelos están entrenados y evaluados (3 de ellos
-reentrenados en esta segunda ronda); las 2 apps web funcionan y
-fueron probadas de extremo a extremo, incluida automatización real de
-navegador (Playwright/Chromium headless), no solo pruebas manuales.
-El proyecto está subido a GitHub:
+reentrenados en la segunda ronda de la Fase 5); las 2 apps web
+funcionan y fueron probadas de extremo a extremo, incluida
+automatización real de navegador (Playwright/Chromium headless), no
+solo pruebas manuales. La app FastAPI tiene además las mejoras de la
+Fase 6 (épocas configurables, entrenar todos, log persistente, botón
+Detener corregido). El proyecto está subido a GitHub:
 https://github.com/CesarEspa/Maestria
 
 
@@ -479,7 +530,42 @@ persiste, sin cambios. Confirma que no depende del punto de
 entrenamiento concreto, sino de una propiedad más estructural de
 cómo EfficientNetB0 representa la información en su última capa.
 
-5.4 Otros problemas menores resueltos
+5.4 Bug real: el botón "Detener" no reflejaba el estado hasta 5 minutos después
+--------------------------------------------------------------------
+kill_process() (training_control.py) lanzaba "taskkill /F /T" contra
+el PID del subproceso de entrenamiento y devolvía éxito de inmediato,
+SIN comprobar que el proceso realmente hubiera muerto. Además, el
+endpoint POST /api/models/{key}/stop (api.py) nunca actualizaba el
+JSON de progreso tras matar el proceso. Resultado: el archivo de
+progreso se quedaba con status="running" y datos congelados, así que
+la tarjeta en el frontend seguía mostrando "Entrenando..." con la
+barra sin avanzar hasta que pasaban los 5 minutos del umbral de
+"stale" (sin actividad reciente) — parecía que la app se hubiera
+colgado, sin serlo.
+
+Corrección: kill_process() ahora espera hasta 8 segundos comprobando
+activamente (tasklist en Windows) que el PID ya no exista antes de
+devolver éxito; y el endpoint /stop llama a mark_status(key, ...,
+"stopped") en cuanto se confirma la muerte del proceso, para que el
+frontend refleje "Detenido" al instante. Se añadió el estado
+"stopped" a STATUS_BADGES y a la lógica de effective_status(), y el
+frontend lo trata como estado terminal (igual que completed/failed)
+para habilitar de nuevo el botón "Reentrenar". Verificado con un
+ciclo real completo (lanzar con pocas épocas, esperar a que arrancara,
+pulsar Detener): pasó de "Entrenando..." a "Detenido" en
+aproximadamente 1 segundo, con el proceso genuinamente terminado
+(confirmado revisando la lista de procesos vivos, no solo el código
+de retorno).
+
+De paso se corrigió una fuga de recursos relacionada: launch_training()
+abría el archivo de log del proceso y nunca lo cerraba, acumulando un
+descriptor de archivo abierto por cada entrenamiento lanzado durante
+toda la vida del proceso servidor (relevante porque este backend está
+pensado para quedarse corriendo mucho tiempo). Se cierra ahora
+inmediatamente después de Popen() (seguro en Windows: Popen duplica
+el handle para el proceso hijo).
+
+5.5 Otros problemas menores resueltos
 --------------------------------------------------------------------
   - UnicodeEncodeError en Windows: la consola por defecto (cp1252)
     no puede imprimir caracteres como flechas o checks que usan los
@@ -578,6 +664,10 @@ cómo EfficientNetB0 representa la información en su última capa.
     2D de forma independiente.
   - Mejorar la explicabilidad: probar Grad-CAM++ u otras variantes
     menos sensibles a canales de activación atípica (ver 5.3).
+  - Llevar a la app Streamlit los controles añadidos en la Fase 6 a la
+    app FastAPI (elegir número de épocas, botón "Entrenar todos los
+    modelos"), para que ambas interfaces vuelvan a tener paridad
+    completa de funciones.
 
 
 ====================================================================

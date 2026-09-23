@@ -114,6 +114,11 @@
         <h1>Entrenamiento de modelos</h1>
         <p class="subtitle">Este equipo entrena sobre CPU (TensorFlow en Windows no usa la GPU de forma nativa) — el entrenamiento puede tardar. Los tiempos son estimaciones orientativas.</p>
       </header>
+      <div class="train-all-bar">
+        <button class="btn btn-primary" id="train-all-btn">Entrenar todos los modelos</button>
+        <span class="train-all-status" id="train-all-status"></span>
+        <button class="btn" id="train-all-cancel-btn" style="display:none;">Cancelar cola</button>
+      </div>
       <div id="training-cards"></div>
     </section>
 

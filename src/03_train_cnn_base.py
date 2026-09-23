@@ -3,6 +3,8 @@
 Arquitectura sencilla de 3 bloques conv + dense.
 Sirve como línea base para comparar con augmentation y transfer learning.
 """
+import os
+
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
@@ -18,6 +20,10 @@ from progress_tracker import WebProgressCallback, mark_status
 
 MODEL_KEY = "cnn_base"
 DISPLAY_NAME = "CNN Base"
+
+# Permite que la app web sobreescriba el número de épocas para una
+# ejecución concreta sin tocar config.py (ver training_control.launch_training).
+EPOCHS_BASE = int(os.environ.get("TFM_EPOCHS_OVERRIDE", EPOCHS_BASE))
 
 tf.random.set_seed(SEED)
 np.random.seed(SEED)

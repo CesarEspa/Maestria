@@ -252,9 +252,9 @@ construir esas extensiones, no una versión final.
 
 | Método | Ruta | Qué hace |
 |---|---|---|
-| GET | `/api/models` | Estado de los 4 modelos (idle/running/completed/failed) + progreso en vivo |
-| POST | `/api/models/{key}/train` | Lanza el entrenamiento de un modelo |
-| POST | `/api/models/{key}/stop` | Detiene un entrenamiento en curso |
+| GET | `/api/models` | Estado de los 4 modelos (idle/running/completed/failed/stopped/stale) + progreso en vivo |
+| POST | `/api/models/{key}/train` | Lanza el entrenamiento de un modelo (opcionalmente `?epochs=N` para sobreescribir, solo esa ejecución, el valor por defecto de `config.py`) |
+| POST | `/api/models/{key}/stop` | Detiene un entrenamiento en curso — espera a que el proceso muera realmente antes de responder, y marca el modelo como "Detenido" de inmediato |
 | GET | `/api/models/{key}/log` | Log del proceso de entrenamiento |
 | GET | `/api/samples` | Imágenes de ejemplo del dataset, por clase |
 | POST | `/api/classify` | Clasifica una imagen subida (`multipart/form-data`) |
@@ -272,10 +272,23 @@ construir esas extensiones, no una versión final.
    - la fase (para transfer learning: cabeza congelada / fine-tuning),
    - curvas de *loss*/*accuracy* de entrenamiento y validación, actualizadas
      cada pocos segundos,
-   - el log completo del proceso, y un botón para detenerlo si es necesario.
+   - el log completo del proceso (sin códigos de color ANSI, limpiado para
+     que sea legible), y un botón para detenerlo si es necesario — el
+     estado se refleja como "Detenido" en cuanto el proceso muere de
+     verdad, en vez de tardar hasta 5 minutos en notarse.
    Cada entrenamiento se lanza como un **subproceso independiente**: sigue
    corriendo aunque cierres el navegador, y la app simplemente vuelve a leer
    su archivo de progreso al reabrirla.
+
+   *Solo en la versión FastAPI + frontend propio (Opción 2)*: un campo para
+   elegir manualmente el **número de épocas** antes de lanzar cada modelo
+   Keras (en vez del valor fijo de `config.py`); un botón **"Entrenar todos
+   los modelos"** que los lanza en cola secuencial, uno detrás de otro, para
+   no hacerlos competir por la misma CPU; y el panel "Ver log del proceso"
+   permanece desplegado (y se sigue actualizando) aunque la página se
+   refresque sola cada pocos segundos — antes se cerraba en cada refresco.
+   Llevar estos mismos controles a la app Streamlit queda como pendiente,
+   ver [Trabajo futuro](#trabajo-futuro).
 3. **Clasificar imagen** — sube tu propia imagen de TC (o elige una de
    ejemplo del propio dataset) y dile a la app con qué modelo entrenado
    quieres clasificarla. Muestra la clase predicha, la confianza, la
@@ -613,3 +626,6 @@ capa convolucional.
 - Explorar arquitecturas 3D que aprovechen la información volumétrica de
   cortes consecutivos, en lugar de clasificar cortes 2D de forma
   independiente.
+- Llevar a la app Streamlit los controles añadidos a la app FastAPI (elegir
+  número de épocas, botón "Entrenar todos los modelos"), para que ambas
+  interfaces vuelvan a tener paridad completa de funciones.

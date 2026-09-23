@@ -8,6 +8,7 @@ const STATUS_LABELS = {
   running: "Entrenando…",
   completed: "Completado",
   failed: "Falló",
+  stopped: "Detenido",
   stale: "Sin actividad reciente",
 };
 
@@ -28,6 +29,9 @@ const state = {
   charts: {}, // key -> {loss: Chart, acc: Chart}
   selectedImage: null, // { kind: 'upload'|'sample', file?, label?, index?, previewUrl }
   pollTimer: null,
+  openLogs: new Set(), // claves de modelo cuyo log está desplegado (sobrevive al re-render)
+  epochOverrides: {}, // key -> épocas elegidas por el usuario (string del <input>)
+  trainAll: { active: false, queue: [], current: null, total: 0, done: 0, launchedAt: 0 },
 };
 
 // ───────────────────────────── Navegación ─────────────────────────────
@@ -119,6 +123,7 @@ async function pollModels() {
     renderTrainingCards();
     renderMiniStatus();
     populateModelSelect();
+    checkTrainAllProgress();
   } catch (e) {
     // silencioso: se reintenta en el siguiente ciclo
   }
@@ -129,7 +134,7 @@ function renderMiniStatus() {
   el.innerHTML = state.models.map((m) => {
     const dotColor = {
       idle: "var(--idle)", running: "var(--warn)", completed: "var(--ok)",
-      failed: "var(--danger)", stale: "var(--warn)",
+      failed: "var(--danger)", stopped: "var(--idle)", stale: "var(--warn)",
     }[m.status] || "var(--idle)";
     return `<div class="mini-row"><span>${m.name}</span><span style="color:${dotColor}">●</span></div>`;
   }).join("");
@@ -158,10 +163,25 @@ function renderTrainingCards() {
     if (stopBtn) stopBtn.addEventListener("click", () => handleStop(m.key));
     const logToggle = document.getElementById(`log-toggle-${m.key}`);
     if (logToggle) logToggle.addEventListener("click", () => toggleLog(m.key));
+    const epochInput = document.getElementById(`epoch-input-${m.key}`);
+    if (epochInput) {
+      epochInput.addEventListener("input", () => { state.epochOverrides[m.key] = epochInput.value; });
+    }
 
     if (m.status === "running" && m.progress) {
       renderCharts(m.key, m.progress.history || []);
     }
+  });
+
+  // El log-box se recrea desde cero en cada re-render (cada 3s mientras hay
+  // entrenamientos activos); volvemos a aplicarle la clase "open" y a
+  // refrescar su contenido para los logs que el usuario dejó desplegados,
+  // en vez de que el toggle se pierda en cada ciclo de polling.
+  state.openLogs.forEach((key) => {
+    const box = document.getElementById(`log-box-${key}`);
+    if (!box) { state.openLogs.delete(key); return; }
+    box.classList.add("open");
+    loadLogContent(key);
   });
 }
 
@@ -199,12 +219,26 @@ function trainingCardHtml(m) {
     </div>`;
   } else if (m.status === "failed") {
     progressBlock = `<div class="banner banner-danger small">Error: ${p.error || "desconocido"}</div>`;
+  } else if (m.status === "stopped") {
+    progressBlock = `<div class="banner small" style="background:var(--idle-soft);color:var(--text);">Entrenamiento detenido manualmente en la época ${p.current_epoch || "?"}. Puedes reentrenar cuando quieras.</div>`;
   } else if (m.status === "stale") {
     progressBlock = `<div class="banner banner-warning small">El proceso dejó de reportar progreso. Puede haberse detenido o fallado.</div>`;
   }
 
-  const trainLabel = ["completed", "failed", "stale"].includes(m.status) ? "Reentrenar" : "Entrenar";
-  const trainDisabled = running ? "disabled" : "";
+  const trainLabel = ["completed", "failed", "stopped", "stale"].includes(m.status) ? "Reentrenar" : "Entrenar";
+  const trainDisabled = (running || state.trainAll.active) ? "disabled" : "";
+
+  let epochField = "";
+  if (!running && m.default_epochs != null) {
+    const val = state.epochOverrides[m.key] ?? m.default_epochs;
+    epochField = `
+      <label class="epoch-field">
+        ${m.epochs_label || "Épocas"}
+        <input type="number" min="1" max="500" step="1" value="${val}" id="epoch-input-${m.key}" ${trainDisabled} />
+      </label>`;
+  }
+
+  const logIsOpen = state.openLogs.has(m.key);
 
   return `
     <div class="training-card">
@@ -217,13 +251,14 @@ function trainingCardHtml(m) {
           <div class="training-card-note">${m.note}</div>
         </div>
         <div class="training-actions">
+          ${epochField}
           <button class="btn btn-primary" id="train-btn-${m.key}" ${trainDisabled}>${trainLabel}</button>
           ${running ? `<button class="btn btn-danger" id="stop-btn-${m.key}">Detener</button>` : ""}
         </div>
       </div>
       ${progressBlock}
-      <button class="log-toggle" id="log-toggle-${m.key}">Ver log del proceso ▾</button>
-      <div class="log-box" id="log-box-${m.key}"></div>
+      <button class="log-toggle" id="log-toggle-${m.key}">Ver log del proceso ${logIsOpen ? "▴" : "▾"}</button>
+      <div class="log-box${logIsOpen ? " open" : ""}" id="log-box-${m.key}"></div>
     </div>
   `;
 }
@@ -271,11 +306,19 @@ function renderCharts(key, history) {
   };
 }
 
+function epochsFor(key) {
+  const raw = state.epochOverrides[key];
+  const n = raw != null ? Number(raw) : null;
+  return n && n > 0 ? n : null;
+}
+
 async function handleTrain(key) {
   const btn = document.getElementById(`train-btn-${key}`);
   if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> Lanzando…`; }
   try {
-    await apiPost(`/api/models/${key}/train`, {});
+    const epochs = epochsFor(key);
+    const qs = epochs ? `?epochs=${epochs}` : "";
+    await apiPost(`/api/models/${key}/train${qs}`, {});
     await pollModels();
   } catch (e) {
     alert("No se pudo lanzar el entrenamiento: " + e.message);
@@ -284,30 +327,139 @@ async function handleTrain(key) {
 }
 
 async function handleStop(key) {
+  const btn = document.getElementById(`stop-btn-${key}`);
+  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> Deteniendo…`; }
   try {
     await apiPost(`/api/models/${key}/stop`, {});
     await pollModels();
   } catch (e) {
     alert("No se pudo detener el proceso: " + e.message);
+    await pollModels();
   }
 }
 
-async function toggleLog(key) {
+function toggleLog(key) {
   const box = document.getElementById(`log-box-${key}`);
-  const isOpen = box.classList.contains("open");
+  const toggleBtn = document.getElementById(`log-toggle-${key}`);
+  const isOpen = state.openLogs.has(key);
   if (isOpen) {
+    state.openLogs.delete(key);
     box.classList.remove("open");
+    if (toggleBtn) toggleBtn.textContent = "Ver log del proceso ▾";
     return;
   }
-  box.textContent = "Cargando log…";
+  state.openLogs.add(key);
   box.classList.add("open");
+  if (toggleBtn) toggleBtn.textContent = "Ver log del proceso ▴";
+  box.textContent = "Cargando log…";
+  loadLogContent(key);
+}
+
+// Refresca el contenido de un log ya desplegado sin tocar su estado
+// abierto/cerrado. Si el usuario está viendo el final del log, lo sigue
+// desplazando hacia abajo (comportamiento tipo "tail -f"); si se desplazó
+// hacia arriba para leer algo anterior, respeta su posición de scroll.
+async function loadLogContent(key) {
+  const box = document.getElementById(`log-box-${key}`);
+  if (!box) return;
+  const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
   try {
     const data = await apiGet(`/api/models/${key}/log`);
     box.textContent = data.log || "(log vacío)";
-    box.scrollTop = box.scrollHeight;
   } catch (e) {
     box.textContent = "No se pudo cargar el log.";
   }
+  if (nearBottom) box.scrollTop = box.scrollHeight;
+}
+
+// ───────────────────────── Entrenar todos (cola secuencial) ─────────────────────────
+// En esta máquina (solo CPU) entrenar varios modelos a la vez los haría
+// competir por el mismo procesador y tardarían todos más, así que la cola
+// lanza un modelo, espera a que termine (o se estanque) y recién entonces
+// lanza el siguiente.
+
+document.getElementById("train-all-btn").addEventListener("click", handleTrainAll);
+document.getElementById("train-all-cancel-btn").addEventListener("click", cancelTrainAllQueue);
+
+function handleTrainAll() {
+  if (state.trainAll.active || !state.models.length) return;
+  const keys = state.models.map((m) => m.key);
+  state.trainAll = {
+    active: true, queue: keys.slice(1), current: keys[0],
+    total: keys.length, done: 0, launchedAt: 0,
+  };
+  renderTrainAllStatus();
+  renderTrainingCards();
+  launchTrainAllCurrent();
+}
+
+function cancelTrainAllQueue() {
+  state.trainAll.queue = [];
+  state.trainAll.active = false;
+  state.trainAll.current = null;
+  renderTrainAllStatus();
+  renderTrainingCards();
+}
+
+async function launchTrainAllCurrent() {
+  const key = state.trainAll.current;
+  try {
+    const epochs = epochsFor(key);
+    const qs = epochs ? `?epochs=${epochs}` : "";
+    await apiPost(`/api/models/${key}/train${qs}`, {});
+  } catch (e) {
+    // Puede que ya estuviera entrenándose (409) u otro error puntual: de
+    // todos modos lo vigilamos hasta que termine antes de seguir con el próximo.
+  }
+  state.trainAll.launchedAt = Date.now();
+  await pollModels();
+}
+
+function checkTrainAllProgress() {
+  if (!state.trainAll.active || !state.trainAll.current) return;
+  // Margen de gracia tras el lanzamiento para que el subproceso alcance a
+  // reportar "running" antes de evaluar si ya terminó (evita avanzar la
+  // cola de forma prematura leyendo el estado "idle" previo al arranque).
+  if (Date.now() - state.trainAll.launchedAt < 4000) return;
+  const m = state.models.find((x) => x.key === state.trainAll.current);
+  if (!m) return;
+  if (["completed", "failed", "stopped", "stale"].includes(m.status)) {
+    advanceTrainAllQueue();
+  }
+}
+
+function advanceTrainAllQueue() {
+  state.trainAll.done += 1;
+  if (!state.trainAll.queue.length) {
+    state.trainAll.active = false;
+    state.trainAll.current = null;
+    renderTrainAllStatus();
+    renderTrainingCards();
+    return;
+  }
+  state.trainAll.current = state.trainAll.queue.shift();
+  renderTrainAllStatus();
+  renderTrainingCards();
+  launchTrainAllCurrent();
+}
+
+function renderTrainAllStatus() {
+  const el = document.getElementById("train-all-status");
+  const btn = document.getElementById("train-all-btn");
+  const cancelBtn = document.getElementById("train-all-cancel-btn");
+  if (!state.trainAll.active) {
+    el.textContent = "";
+    btn.disabled = false;
+    btn.textContent = "Entrenar todos los modelos";
+    cancelBtn.style.display = "none";
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = "Entrenando todos…";
+  cancelBtn.style.display = "";
+  const m = state.models.find((x) => x.key === state.trainAll.current);
+  const name = m ? m.name : state.trainAll.current;
+  el.textContent = `(${state.trainAll.done + 1}/${state.trainAll.total}) ${name}`;
 }
 
 // ───────────────────────────── Página Clasificar ─────────────────────────────

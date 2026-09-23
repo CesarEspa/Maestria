@@ -48,6 +48,7 @@ from training_control import (  # noqa: E402
     TRAINABLE, TRAINABLE_BY_KEY,
     read_progress, effective_status, launch_training, kill_process, read_log_tail,
 )
+from progress_tracker import mark_status  # noqa: E402
 
 FRONTEND_DIR = SRC_DIR / "frontend"
 
@@ -132,12 +133,14 @@ def list_models():
             "note": entry["note"],
             "status": status,
             "progress": state,
+            "default_epochs": entry.get("default_epochs"),
+            "epochs_label": entry.get("epochs_label"),
         })
     return out
 
 
 @app.post("/api/models/{key}/train")
-def train_model(key: str):
+def train_model(key: str, epochs: int | None = None):
     entry = TRAINABLE_BY_KEY.get(key)
     if entry is None:
         raise HTTPException(404, f"Modelo desconocido: {key}")
@@ -147,8 +150,11 @@ def train_model(key: str):
     if status == "running":
         raise HTTPException(409, "Este modelo ya se está entrenando.")
 
-    launch_training(entry)
-    return {"launched": True, "key": key}
+    if epochs is not None and not (1 <= epochs <= 500):
+        raise HTTPException(400, "El número de épocas debe estar entre 1 y 500.")
+
+    launch_training(entry, epochs=epochs)
+    return {"launched": True, "key": key, "epochs": epochs}
 
 
 @app.post("/api/models/{key}/stop")
@@ -163,7 +169,15 @@ def stop_model(key: str):
 
     ok = kill_process(state["pid"])
     if not ok:
-        raise HTTPException(500, "No se pudo detener el proceso.")
+        raise HTTPException(
+            500,
+            "El proceso no respondió a la señal de detener y puede seguir "
+            "en ejecución en segundo plano. Intenta de nuevo en unos segundos."
+        )
+    # Importante: sin esto, el JSON de progreso se queda con status="running"
+    # (y el frontend sigue mostrando "Entrenando…" con la barra congelada)
+    # hasta que pasan los 5 minutos del umbral de "stale".
+    mark_status(key, entry["name"], "stopped")
     return {"stopped": True, "key": key}
 
 

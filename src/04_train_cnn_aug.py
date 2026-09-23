@@ -2,6 +2,8 @@
 04 - CNN con Aumento de Datos (Data Augmentation)
 Misma arquitectura que la CNN base, pero con augmentation en tiempo real.
 """
+import os
+
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
@@ -17,6 +19,10 @@ from progress_tracker import WebProgressCallback, mark_status
 
 MODEL_KEY = "cnn_augmented"
 DISPLAY_NAME = "CNN + Augmentation"
+
+# Permite que la app web sobreescriba el número de épocas para una
+# ejecución concreta sin tocar config.py (ver training_control.launch_training).
+EPOCHS_BASE = int(os.environ.get("TFM_EPOCHS_OVERRIDE", EPOCHS_BASE))
 
 tf.random.set_seed(SEED)
 np.random.seed(SEED)

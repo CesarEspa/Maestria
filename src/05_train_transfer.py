@@ -3,6 +3,8 @@
 Usa una red preentrenada en ImageNet, congela la base y entrena solo el clasificador.
 Luego hace fine-tuning parcial de las últimas capas.
 """
+import os
+
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
@@ -20,6 +22,11 @@ from progress_tracker import WebProgressCallback, mark_status
 MODEL_KEY = "transfer_efficientnet"
 DISPLAY_NAME = "Transfer Learning (EfficientNetB0)"
 PHASE1_EPOCHS = 15
+
+# Permite que la app web sobreescriba el número de épocas de la fase 2
+# (fine-tuning) para una ejecución concreta, sin tocar config.py. La fase 1
+# (cabeza congelada) se mantiene siempre fija en PHASE1_EPOCHS.
+EPOCHS_TRANSFER = int(os.environ.get("TFM_EPOCHS_OVERRIDE", EPOCHS_TRANSFER))
 
 tf.random.set_seed(SEED)
 np.random.seed(SEED)
