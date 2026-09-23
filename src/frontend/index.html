@@ -4,6 +4,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>TFM · Cáncer de Pulmón en TC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="style.css" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 </head>
@@ -13,25 +16,39 @@
 
   <aside class="sidebar">
     <div class="brand">
-      <span class="brand-icon">🫁</span>
+      <span class="brand-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-8 4 16 2-8h6"/></svg>
+      </span>
       <div>
-        <div class="brand-title">TFM Cáncer de Pulmón</div>
-        <div class="brand-sub">Detección en TC · CNN &amp; Transfer Learning</div>
+        <div class="brand-title">TFM &middot; Cáncer de Pulmón</div>
+        <div class="brand-sub">Detección en TC &middot; CNN &amp; Transfer Learning</div>
       </div>
     </div>
 
     <nav class="nav">
       <button class="nav-item active" data-page="inicio">
-        <span class="nav-icon">🏠</span> Inicio
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9a1 1 0 0 0 1 1h4v-6h3v6h4a1 1 0 0 0 1-1v-9"/></svg>
+        </span>
+        Inicio
       </button>
       <button class="nav-item" data-page="entrenamiento">
-        <span class="nav-icon">⚙️</span> Entrenamiento
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2.1" fill="currentColor" stroke="none"/><line x1="4" y1="13" x2="20" y2="13"/><circle cx="16" cy="13" r="2.1" fill="currentColor" stroke="none"/><line x1="4" y1="19" x2="20" y2="19"/><circle cx="12" cy="19" r="2.1" fill="currentColor" stroke="none"/></svg>
+        </span>
+        Entrenamiento
       </button>
       <button class="nav-item" data-page="clasificar">
-        <span class="nav-icon">🔬</span> Clasificar imagen
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </span>
+        Clasificar imagen
       </button>
       <button class="nav-item" data-page="resultados">
-        <span class="nav-icon">📊</span> Resultados
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="20" x2="5" y2="11"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="19" y1="20" x2="19" y2="15"/></svg>
+        </span>
+        Resultados
       </button>
     </nav>
 
@@ -46,13 +63,18 @@
     <!-- ───────────────── INICIO ───────────────── -->
     <section class="page active" id="page-inicio">
       <header class="page-header">
-        <h1>🫁 Detección y Clasificación de Cáncer de Pulmón en TC</h1>
+        <h1>Detección y Clasificación de Cáncer de Pulmón en TC</h1>
         <p class="subtitle">TFM — Máster en Inteligencia Artificial · CNNs, aumento de datos y transfer learning sobre el dataset IQ-OTH/NCCD.</p>
       </header>
 
       <div class="banner banner-warning">
-        <strong>⚠️ Herramienta de apoyo al diagnóstico (CADe/CADx), no un sustituto del criterio médico.</strong>
-        Los resultados de este sistema son orientativos y deben ser siempre confirmados por un radiólogo o especialista.
+        <span class="banner-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"/></svg>
+        </span>
+        <span>
+          <strong>Herramienta de apoyo al diagnóstico (CADe/CADx), no un sustituto del criterio médico.</strong>
+          Los resultados de este sistema son orientativos y deben ser siempre confirmados por un radiólogo o especialista.
+        </span>
       </div>
 
       <div class="grid-2">
@@ -69,10 +91,15 @@
           <p id="dataset-summary-text">Cargando resumen del dataset…</p>
           <div class="dataset-bars" id="dataset-bars"></div>
           <div class="banner banner-danger small">
-            <strong>Limitación importante:</strong> las imágenes exportadas no incluyen identificador de paciente.
-            Como este dataset contiene múltiples cortes de TC por paciente, es probable que existan cortes muy
-            similares entre conjuntos de entrenamiento y prueba (<em>data leakage</em>). Ver la pestaña
-            <strong>Resultados</strong> para más detalle.
+            <span class="banner-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"/></svg>
+            </span>
+            <span>
+              <strong>Limitación importante:</strong> las imágenes exportadas no incluyen identificador de paciente.
+              Como este dataset contiene múltiples cortes de TC por paciente, es probable que existan cortes muy
+              similares entre conjuntos de entrenamiento y prueba (<em>data leakage</em>). Ver la pestaña
+              <strong>Resultados</strong> para más detalle.
+            </span>
           </div>
         </div>
       </div>
@@ -85,7 +112,7 @@
     <section class="page" id="page-entrenamiento">
       <header class="page-header">
         <h1>Entrenamiento de modelos</h1>
-        <p class="subtitle">No hay GPU disponible en este equipo: el entrenamiento corre sobre CPU y puede tardar. Los tiempos son estimaciones orientativas.</p>
+        <p class="subtitle">Este equipo entrena sobre CPU (TensorFlow en Windows no usa la GPU de forma nativa) — el entrenamiento puede tardar. Los tiempos son estimaciones orientativas.</p>
       </header>
       <div id="training-cards"></div>
     </section>
@@ -98,12 +125,17 @@
       </header>
 
       <div class="card random-holdout-card">
-        <div>
-          <strong>🎲 ¿Está bien entrenado?</strong>
-          <p class="muted" style="margin:4px 0 0 0;">
-            Elige una imagen al azar del 30% de datos que el modelo <strong>no vio durante el
-            entrenamiento</strong> (validación + test) para comprobar cómo generaliza.
-          </p>
+        <div class="random-holdout-text">
+          <span class="icon-badge">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8" cy="8" r="1.3" fill="currentColor" stroke="none"/><circle cx="16" cy="16" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="8" cy="16" r="1.3" fill="currentColor" stroke="none"/><circle cx="16" cy="8" r="1.3" fill="currentColor" stroke="none"/></svg>
+          </span>
+          <div>
+            <strong>¿Está bien entrenado?</strong>
+            <p class="muted" style="margin:4px 0 0 0;">
+              Elige una imagen al azar del 30% de datos que el modelo <strong>no vio durante el
+              entrenamiento</strong> (validación + test) para comprobar cómo generaliza.
+            </p>
+          </div>
         </div>
         <button class="btn btn-primary" id="random-holdout-btn">Elegir imagen aleatoria</button>
       </div>
@@ -118,7 +150,9 @@
           <div class="dropzone" id="dropzone">
             <input type="file" id="file-input" accept="image/*" hidden />
             <div class="dropzone-content">
-              <span class="dropzone-icon">📤</span>
+              <span class="dropzone-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+              </span>
               <p>Arrastra una imagen aquí, o haz clic para seleccionar</p>
               <p class="dropzone-hint">JPG, PNG, BMP, TIFF</p>
             </div>

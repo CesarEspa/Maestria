@@ -1,25 +1,27 @@
-tensorflow>=2.15.0
-numpy>=1.24.0
-pandas>=2.0.0
-matplotlib>=3.7.0
-seaborn>=0.12.0
-scikit-learn>=1.3.0
-scikit-image>=0.21.0
-Pillow>=10.0.0
-opencv-python>=4.8.0
-joblib>=1.3.0
-
-# App web interactiva #1: Streamlit (entrenamiento en vivo + clasificación)
-streamlit>=1.30.0
-
-# App web interactiva #2: backend FastAPI + frontend HTML/CSS/JS propio
-# (src/api.py + src/frontend/). Misma funcionalidad que la app Streamlit,
-# pero como API REST separada del frontend — más fácil de extender más
-# adelante (auth, base de datos, desplegarla, etc.).
-fastapi>=0.110.0
-uvicorn[standard]>=0.29.0
-python-multipart>=0.0.9
-
-# TensorFlow requiere protobuf<5; instalar streamlit puede subirlo a >=5.
-# Si eso ocurre, reinstalar con: pip install "protobuf>=3.20.3,<5.0.0dev"
-protobuf>=3.20.3,<5.0.0dev
+# Dependencias del PIPELINE (scripts 01 a 08). Versiones fijadas (==) para
+# reproducibilidad exacta del TFM.
+#
+# IMPORTANTE — instalar en este orden exacto (no combinar en un solo
+# comando con requirements-web.txt): tensorflow exige protobuf<5 y
+# streamlit exige protobuf>=5.26.1; son metadatos mutuamente excluyentes,
+# así que pip solo puede resolverlos en INVOCACIONES SEPARADAS (dentro de
+# una misma invocación, con ambos paquetes a la vez, pip falla con
+# "ResolutionImpossible" — es una limitación real de pip, no un error de
+# este archivo). En la práctica, protobuf 4.25.9 funciona bien en tiempo
+# de ejecución con las dos librerías pese al conflicto declarado.
+#
+#   pip install -r requirements.txt
+#   pip install -r requirements-web.txt
+#   pip install "protobuf==4.25.9"
+#
+# (ver también la sección "Instalación" del README.md)
+tensorflow==2.17.1
+numpy==1.26.4
+pandas==3.0.5
+matplotlib==3.11.2
+seaborn==0.13.2
+scikit-learn==1.9.1
+scikit-image==0.26.0
+Pillow==12.3.0
+opencv-python==4.11.0.86
+joblib==1.6.0

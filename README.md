@@ -112,7 +112,9 @@ tfm-lung-cancer/
 │   ├── gradcam/                  # Imágenes Grad-CAM
 │   ├── splits/                   # dataset_splits.npz (arrays preprocesados)
 │   └── progress/                 # Estado de entrenamiento en vivo (JSON) + logs
-├── requirements.txt
+├── requirements.txt               # Dependencias del pipeline (TensorFlow, etc.)
+├── requirements-web.txt           # Dependencias extra de las apps web (Streamlit, FastAPI)
+├── PROYECTO_CLAUDE_CONTEXTO.txt    # Contexto completo del proyecto (para IA/documentación)
 └── README.md
 ```
 
@@ -126,8 +128,31 @@ venv\Scripts\activate
 # Mac/Linux:
 source venv/bin/activate
 
+# Los tres comandos van EN ESTE ORDEN, cada uno por separado (ver nota
+# sobre protobuf más abajo — no se pueden combinar en un solo comando):
 pip install -r requirements.txt
+pip install -r requirements-web.txt
+pip install "protobuf==4.25.9"
 ```
+
+Esta secuencia de 3 pasos está validada: se probó instalando desde cero en
+un entorno virtual nuevo (sin nada preinstalado) y funciona de punta a
+punta, incluyendo lanzar la app web y comprobar que reconoce los modelos
+ya entrenados.
+
+**¿Por qué 3 comandos separados y no uno solo?** `requirements.txt`
+(TensorFlow y el resto del pipeline) y `requirements-web.txt` (Streamlit,
+FastAPI) tienen requisitos de `protobuf` mutuamente excluyentes en sus
+propios metadatos: TensorFlow exige `protobuf<5` y Streamlit exige
+`protobuf>=5.26.1`. Si se listan ambos archivos en un único comando
+`pip install`, el resolvedor de dependencias de pip falla de inmediato con
+`ResolutionImpossible` — es una limitación real de pip (que sí valida
+conflictos entre paquetes de una misma invocación), no un error de estos
+archivos. Instalándolos en **invocaciones separadas**, pip resuelve cada
+uno de forma independiente (solo avisa, sin bloquear, si el resultado
+final no es 100% coherente) y el último paso fuerza la versión de
+protobuf que en la práctica funciona bien en tiempo de ejecución con
+ambas librerías pese al conflicto declarado en sus metadatos.
 
 **Notas para Windows:**
 
@@ -138,15 +163,6 @@ pip install -r requirements.txt
   $env:PYTHONIOENCODING = "utf-8"
   ```
   (en bash/Git Bash: `export PYTHONIOENCODING=utf-8`)
-- Instalar `streamlit` puede actualizar `protobuf` a una versión
-  incompatible con TensorFlow (`protobuf>=5`, pero TensorFlow 2.17
-  requiere `<5`). Si `import tensorflow` falla tras instalar Streamlit,
-  ejecuta:
-  ```bash
-  pip install "protobuf>=3.20.3,<5.0.0dev"
-  ```
-  `requirements.txt` ya fija este rango para evitar el problema en una
-  instalación limpia.
 - Este proyecto se desarrolló y probó **sin GPU** (solo CPU), pese a que el
   equipo de desarrollo sí tiene una GPU NVIDIA física (RTX 3050). El motivo:
   desde TensorFlow 2.11, el paquete `pip install tensorflow` estándar **ya

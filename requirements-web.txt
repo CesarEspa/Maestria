@@ -1,0 +1,18 @@
+# Dependencias EXTRA para las apps web (además de requirements.txt).
+# Instalar SIEMPRE en una invocación separada de requirements.txt — ver la
+# nota sobre el conflicto de protobuf en la cabecera de ese archivo.
+#
+#   pip install -r requirements.txt
+#   pip install -r requirements-web.txt
+#   pip install "protobuf==4.25.9"
+
+# App web #1: Streamlit (entrenamiento en vivo + clasificación)
+streamlit==1.64.0
+
+# App web #2: backend FastAPI + frontend HTML/CSS/JS propio
+# (src/api.py + src/frontend/). Misma funcionalidad que la app Streamlit,
+# pero como API REST separada del frontend — más fácil de extender más
+# adelante (auth, base de datos, desplegarla, etc.).
+fastapi==0.141.1
+uvicorn[standard]==0.53.0
+python-multipart==0.0.32

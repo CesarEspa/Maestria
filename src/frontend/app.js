@@ -11,6 +11,18 @@ const STATUS_LABELS = {
   stale: "Sin actividad reciente",
 };
 
+// Iconos SVG en línea reutilizables (evitan depender de emoji, más
+// consistentes visualmente entre sistemas operativos y navegadores).
+const ICONS = {
+  check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 5-5"/></svg>`,
+  cross: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>`,
+  warning: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"/></svg>`,
+  star: `<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2.5l2.9 6.6 7.1.6-5.4 4.7 1.6 7-6.2-3.8L5.8 21.4l1.6-7L2 9.7l7.1-.6L12 2.5z"/></svg>`,
+};
+function icon(name, cls = "") {
+  return `<span class="inline-icon ${cls}">${ICONS[name]}</span>`;
+}
+
 const state = {
   models: [],
   charts: {}, // key -> {loss: Chart, acc: Chart}
@@ -458,8 +470,8 @@ function renderClassifyResult(result) {
 
   const matchNote = result.true_label
     ? (result.true_label === result.predicted_class
-        ? `<div class="banner" style="background:var(--ok-soft);color:var(--ok);">✓ Coincide con la clase real de la imagen de ejemplo.</div>`
-        : `<div class="banner banner-danger">✗ No coincide con la clase real (${result.true_label}).</div>`)
+        ? `<div class="banner" style="background:var(--ok-soft);color:var(--ok);">${icon("check", "banner-icon")}<span>Coincide con la clase real de la imagen de ejemplo.</span></div>`
+        : `<div class="banner banner-danger">${icon("cross", "banner-icon")}<span>No coincide con la clase real (${result.true_label}).</span></div>`)
     : "";
 
   const probBars = Object.entries(result.probabilities).map(([label, p]) => `
@@ -488,8 +500,9 @@ function renderClassifyResult(result) {
     <div class="prob-bars">${probBars}</div>
     ${gradcamHtml}
     <div class="banner banner-warning small" style="margin-top:16px;">
-      Recordatorio: esta predicción es generada por un modelo de apoyo (CADx) entrenado sobre un dataset
-      académico limitado, y no constituye un diagnóstico médico.
+      ${icon("warning", "banner-icon")}
+      <span>Recordatorio: esta predicción es generada por un modelo de apoyo (CADx) entrenado sobre un dataset
+      académico limitado, y no constituye un diagnóstico médico.</span>
     </div>
   `;
 }
@@ -516,7 +529,7 @@ function renderResultsTable(data) {
   const { metrics, leakage_warning, leakage_warning_text, best_model } = data;
 
   document.getElementById("results-warning").innerHTML = leakage_warning
-    ? `<div class="banner banner-danger">⚠️ ${leakage_warning_text}</div>`
+    ? `<div class="banner banner-danger">${icon("warning", "banner-icon")}<span>${leakage_warning_text}</span></div>`
     : "";
 
   if (!metrics.length) {
@@ -530,7 +543,7 @@ function renderResultsTable(data) {
     const isBest = m.name === best_model;
     const sens = m.sensitivity_per_class || {};
     return `<tr class="${isBest ? "best-row" : ""} ${suspicious ? "suspicious-row" : ""}">
-      <td>${m.name}${suspicious ? " ⚠️" : ""}${isBest ? " 🏆" : ""}</td>
+      <td>${m.name}${suspicious ? " " + icon("warning", "inline-icon warn") : ""}${isBest ? " " + icon("star", "inline-icon star") : ""}</td>
       <td>${fmt4(m.accuracy)}</td>
       <td>${fmt4(m.auc_roc)}</td>
       <td>${fmt4(m.f1_macro)}</td>

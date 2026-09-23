@@ -485,11 +485,20 @@ cómo EfficientNetB0 representa la información en su última capa.
     no puede imprimir caracteres como flechas o checks que usan los
     scripts. Se soluciona fijando PYTHONIOENCODING=utf-8 antes de
     ejecutar cualquier script.
-  - Conflicto de dependencias: instalar streamlit sube "protobuf" a
-    una versión incompatible con TensorFlow (TensorFlow exige <5,
-    streamlit pide >=5). Se resolvió fijando protobuf>=3.20.3,<5 en
-    requirements.txt; en la práctica ambas librerías funcionan bien
-    con esa versión pese al aviso de conflicto de pip.
+  - Conflicto de dependencias real entre TensorFlow y Streamlit:
+    TensorFlow exige protobuf<5, Streamlit exige protobuf>=5.26.1 —
+    son metadatos mutuamente excluyentes. Un primer intento de
+    fijarlo con una sola línea "protobuf==X" DENTRO del mismo
+    requirements.txt que streamlit/fastapi falla con
+    "ResolutionImpossible" al probarlo de verdad en un venv limpio
+    (pip valida conflictos entre paquetes de una misma invocación).
+    La solución que sí funciona, verificada de extremo a extremo en
+    un venv nuevo: separar en dos archivos —requirements.txt (pipeline)
+    y requirements-web.txt (streamlit/fastapi)— e instalarlos en
+    INVOCACIONES DE PIP SEPARADAS, seguido de "pip install
+    protobuf==4.25.9" como tercer paso. En la práctica esa versión de
+    protobuf funciona bien en tiempo de ejecución con ambas librerías
+    pese al conflicto declarado en sus metadatos.
   - Nombre de archivo con doble guion bajo (bug cosmético) en
     06_evaluate.py al generar el nombre del archivo de la matriz de
     confusión de "CNN + Augmentation"; corregido.
