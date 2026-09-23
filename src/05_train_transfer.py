@@ -153,12 +153,16 @@ def main():
         )
 
         # ── Fase 2: Fine-tuning ──────────────────────────────────────
-        print("\n[4/5] Fase 2 — Fine-tuning (últimas 30 capas)...")
+        # Se descongelan las últimas 50 capas (antes 30) para darle al
+        # modelo más capacidad de adaptarse al dominio médico, ahora que
+        # dispone de más épocas (EPOCHS_TRANSFER) para aprovecharlo.
+        UNFROZEN_LAYERS = 50
+        print(f"\n[4/5] Fase 2 — Fine-tuning (últimas {UNFROZEN_LAYERS} capas)...")
         mark_status(MODEL_KEY, DISPLAY_NAME, "running",
                     phase="Fase 2 - Fine-tuning")
         base_model.trainable = True
-        # Congelar todo excepto las últimas 30 capas
-        for layer in base_model.layers[:-30]:
+        # Congelar todo excepto las últimas UNFROZEN_LAYERS capas
+        for layer in base_model.layers[:-UNFROZEN_LAYERS]:
             layer.trainable = False
 
         model.compile(

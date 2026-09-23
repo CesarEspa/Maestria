@@ -23,14 +23,20 @@ np.random.seed(SEED)
 
 
 def build_augmentation_layer():
-    """Capa de aumento de datos integrada en el modelo."""
+    """
+    Capa de aumento de datos integrada en el modelo.
+
+    Reducido respecto a la versión original: se quitó RandomFlip("vertical")
+    (una TC de tórax no se ve al revés — un volteo vertical no es una
+    variación anatómicamente plausible) y RandomTranslation (podía sacar la
+    lesión del encuadre). RandomRotation y RandomZoom se redujeron en
+    magnitud para que la augmentation sea más suave sobre imágenes médicas.
+    """
     return keras.Sequential([
         layers.RandomFlip("horizontal"),
-        layers.RandomFlip("vertical"),
-        layers.RandomRotation(0.15),
-        layers.RandomZoom(0.1),
+        layers.RandomRotation(0.08),
+        layers.RandomZoom(0.05),
         layers.RandomContrast(0.1),
-        layers.RandomTranslation(0.05, 0.05),
     ], name="data_augmentation")
 
 
@@ -45,23 +51,25 @@ def build_cnn_augmented():
     # contaminando las métricas de validación/test con aleatoriedad.
     x = build_augmentation_layer()(inputs)
 
-    # Bloque 1
+    # Bloque 1 (LayerNormalization en vez de BatchNormalization: con pocos
+    # batches por época, las estadísticas de BatchNorm no se estabilizan
+    # bien — ver misma nota en 03_train_cnn_base.py)
     x = layers.Conv2D(32, (3, 3), activation="relu", padding="same")(x)
-    x = layers.BatchNormalization()(x)
+    x = layers.LayerNormalization()(x)
     x = layers.Conv2D(32, (3, 3), activation="relu", padding="same")(x)
     x = layers.MaxPooling2D((2, 2))(x)
     x = layers.Dropout(0.25)(x)
 
     # Bloque 2
     x = layers.Conv2D(64, (3, 3), activation="relu", padding="same")(x)
-    x = layers.BatchNormalization()(x)
+    x = layers.LayerNormalization()(x)
     x = layers.Conv2D(64, (3, 3), activation="relu", padding="same")(x)
     x = layers.MaxPooling2D((2, 2))(x)
     x = layers.Dropout(0.25)(x)
 
     # Bloque 3
     x = layers.Conv2D(128, (3, 3), activation="relu", padding="same")(x)
-    x = layers.BatchNormalization()(x)
+    x = layers.LayerNormalization()(x)
     x = layers.Conv2D(128, (3, 3), activation="relu", padding="same")(x)
     x = layers.MaxPooling2D((2, 2))(x)
     x = layers.Dropout(0.25)(x)
@@ -75,7 +83,9 @@ def build_cnn_augmented():
     model = keras.Model(inputs, outputs)
     model.compile(
         optimizer=keras.optimizers.Adam(learning_rate=LEARNING_RATE),
-        loss="sparse_categorical_crossentropy",
+        # CategoricalCrossentropy + label_smoothing=0.1 (SparseCategorical
+        # no soporta label_smoothing) — ver main() para el one-hot de y.
+        loss=keras.losses.CategoricalCrossentropy(label_smoothing=0.1),
         metrics=["accuracy"]
     )
     return model
@@ -150,6 +160,10 @@ def main():
         class_weights = compute_class_weight("balanced", classes=np.unique(y_train), y=y_train)
         class_weight_dict = dict(enumerate(class_weights))
 
+        # CategoricalCrossentropy (para label_smoothing) necesita one-hot
+        y_train_cat = keras.utils.to_categorical(y_train, num_classes=NUM_CLASSES)
+        y_val_cat = keras.utils.to_categorical(y_val, num_classes=NUM_CLASSES)
+
         print("\n[2/5] Visualizando efecto del augmentation...")
         plot_augmented_samples(X_train)
 
@@ -169,8 +183,8 @@ def main():
 
         print("\n[4/5] Entrenando...")
         history = model.fit(
-            X_train, y_train,
-            validation_data=(X_val, y_val),
+            X_train, y_train_cat,
+            validation_data=(X_val, y_val_cat),
             epochs=EPOCHS_BASE,
             batch_size=BATCH_SIZE,
             class_weight=class_weight_dict,
@@ -184,7 +198,7 @@ def main():
 
         plot_training_history(history, "curvas_cnn_augmented.png")
 
-        val_loss, val_acc = model.evaluate(X_val, y_val, verbose=0)
+        val_loss, val_acc = model.evaluate(X_val, y_val_cat, verbose=0)
         print(f"\n  Resultado en validación → Loss: {val_loss:.4f}, Accuracy: {val_acc:.4f}")
         print("\n✓ Entrenamiento CNN + Augmentation completado.")
 

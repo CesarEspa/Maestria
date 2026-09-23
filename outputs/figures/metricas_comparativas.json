@@ -1,8 +1,19 @@
 [
   {
     "name": "CNN Base",
+    "accuracy": 0.8484848484848485,
+    "auc_roc": 0.9385898392278723,
+    "f1_macro": 0.7304579755399428,
+    "sensitivity_per_class": {
+      "Benigno": 0.4444444444444444,
+      "Maligno": 0.9880952380952381,
+      "Normal": 0.7777777777777778
+    }
+  },
+  {
+    "name": "CNN + Augmentation",
     "accuracy": 0.509090909090909,
-    "auc_roc": 0.5363651633492903,
+    "auc_roc": 0.7280051938470861,
     "f1_macro": 0.2248995983935743,
     "sensitivity_per_class": {
       "Benigno": 0.0,
@@ -11,25 +22,14 @@
     }
   },
   {
-    "name": "CNN + Augmentation",
-    "accuracy": 0.38181818181818183,
-    "auc_roc": 0.5027484244726698,
-    "f1_macro": 0.1842105263157895,
-    "sensitivity_per_class": {
-      "Benigno": 0.0,
-      "Maligno": 0.0,
-      "Normal": 1.0
-    }
-  },
-  {
     "name": "Transfer Learning",
-    "accuracy": 0.7090909090909091,
-    "auc_roc": 0.9133896356896668,
-    "f1_macro": 0.6291625615763546,
+    "accuracy": 0.8303030303030303,
+    "auc_roc": 0.9760644998740237,
+    "f1_macro": 0.7764171958002356,
     "sensitivity_per_class": {
-      "Benigno": 0.5,
-      "Maligno": 0.75,
-      "Normal": 0.7142857142857143
+      "Benigno": 0.8888888888888888,
+      "Maligno": 0.8690476190476191,
+      "Normal": 0.7619047619047619
     }
   }
 ]

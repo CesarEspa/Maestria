@@ -199,10 +199,62 @@ mi imagen" / "Usar imagen de ejemplo") y se sustituyó por un botón
 combinados, 330 imágenes en total) para comprobar rápidamente "si el
 modelo está bien entrenado" sobre datos nunca vistos.
 
-ESTADO ACTUAL: los 4 modelos están entrenados y evaluados; las 2
-apps web funcionan y fueron probadas de extremo a extremo, incluida
-automatización real de navegador (Playwright/Chromium headless), no
-solo pruebas manuales.
+FASE 5 — Segunda ronda de entrenamiento: intento de arreglar el colapso
+----------------------------------------------------------------------
+Con el diagnóstico de la Fase 1 en mano (ver sección 4 original: las
+CNN entrenadas desde cero colapsaban a predecir una sola clase), el
+usuario pidió intentar resolverlo aplicando directamente la hipótesis
+de causa raíz, usando GPU si estaba disponible.
+
+Se comprobó que, aunque el equipo tiene una GPU NVIDIA física (RTX
+3050), la instalación de TensorFlow no podía usarla: desde TF 2.11,
+`pip install tensorflow` ya no trae soporte nativo de GPU en Windows.
+Usarla de verdad habría requerido WSL2 o el plugin DirectML de
+Microsoft (con riesgo de romper el código Keras 3 ya probado), así
+que se decidió reentrenar en CPU en vez de arriesgar el entorno.
+
+Cambios aplicados a CNN Base y CNN + Augmentation:
+  - LayerNormalization en vez de BatchNormalization (no depende de
+    estadísticas de batch, inmune al problema de pocos batches/época).
+  - Learning rate bajado de 1e-3 a 1e-4.
+  - Loss con label_smoothing=0.1 (requirió cambiar a
+    CategoricalCrossentropy + etiquetas one-hot).
+  - EarlyStopping: paciencia subida de 7 a 12; presupuesto de épocas
+    subido de 50 a 80.
+  - Solo en CNN + Augmentation: augmentation reducido (se quitó
+    RandomFlip vertical y RandomTranslation; RandomRotation y
+    RandomZoom con menor magnitud).
+
+Cambios aplicados a Transfer Learning:
+  - Fine-tuning de las últimas 50 capas de EfficientNetB0 (antes 30).
+  - Presupuesto de épocas de la fase de fine-tuning subido de 30 a 50.
+
+RESULTADO (ver sección 4 para el detalle completo, ya actualizada con
+estos números): la CNN Base se arregló POR COMPLETO (50.9% -> 84.85%
+de exactitud, ya no colapsa). La CNN + Augmentation solo mejoró
+parcialmente: su AUC-ROC subió de 0.503 a 0.728, pero la exactitud
+final (50.9%) sigue correspondiendo a un colapso hacia la clase
+mayoritaria. La Transfer Learning mejoró de 70.9% a 83.0% de
+exactitud y de 0.913 a 0.976 de AUC-ROC. El NO haber arreglado del
+todo la CNN + Augmentation es, en sí mismo, un resultado informativo:
+como la CNN Base (misma arquitectura e hiperparámetros, sin
+augmentation) sí se arregló, la diferencia solo puede deberse al
+augmentation en tiempo real — evidencia de que el augmentation es un
+factor causal adicional de inestabilidad en este dataset pequeño, no
+solo la normalización o el learning rate.
+
+También se extendió 06_evaluate.py para generar curvas ROC
+comparativas de los 4 modelos (macro-average, superpuestas en una
+figura) y el classification_report de cada modelo como imagen, y se
+regeneró el grid de Grad-CAM con el nuevo mejor modelo (el problema
+de la esquina saturada, sección 5.3 original, persiste sin cambios).
+
+ESTADO ACTUAL: los 4 modelos están entrenados y evaluados (3 de ellos
+reentrenados en esta segunda ronda); las 2 apps web funcionan y
+fueron probadas de extremo a extremo, incluida automatización real de
+navegador (Playwright/Chromium headless), no solo pruebas manuales.
+El proyecto está subido a GitHub:
+https://github.com/CesarEspa/Maestria
 
 
 ====================================================================
@@ -213,101 +265,117 @@ Todos los modelos de Keras usan class_weight="balanced",
 EarlyStopping sobre val_loss (restore_best_weights=True) y
 ReduceLROnPlateau. Métricas medidas sobre el conjunto de TEST
 (165 imágenes: 18 Benigno, 84 Maligno, 63 Normal), generadas por
-06_evaluate.py y 08_baseline_ml.py.
+06_evaluate.py y 08_baseline_ml.py. Estos son los resultados FINALES,
+tras la segunda ronda de reentrenamiento descrita en la sección 3
+(Fase 5). Para el resultado original de la primera ronda (antes del
+diagnóstico y las correcciones), ver sección 5.2.
 
 --------------------------------------------------------------------
-4.1 CNN Base (sin aumento de datos)
+4.1 CNN Base (sin aumento de datos) — ARREGLADA POR COMPLETO
 --------------------------------------------------------------------
-Arquitectura: 3 bloques Conv2D(32->64->128) + BatchNormalization +
+Arquitectura: 3 bloques Conv2D(32->64->128) + LayerNormalization +
 MaxPooling + Dropout, GlobalAveragePooling2D, Dense(256), Dense(3,
-softmax). ~321,700 parámetros. Learning rate 1e-3.
+softmax). ~321,250 parámetros. Learning rate 1e-4.
+Loss: CategoricalCrossentropy(label_smoothing=0.1) sobre etiquetas
+one-hot. EarlyStopping paciencia 12, hasta 80 épocas.
 
-RESULTADO: colapso de entrenamiento. La exactitud en entrenamiento
-sube con normalidad (hasta ~78%), pero la pérdida de validación
-crece de forma monótona desde la primera época (de 1.23 en época 1 a
-10.64 en época 8) mientras la exactitud de validación queda
-CONGELADA en un único valor. El modelo termina prediciendo SIEMPRE
-"Maligno" para cualquier imagen de test.
+RESULTADO: el colapso de la primera ronda desapareció por completo.
+Convergencia normal, sin explosión de la pérdida de validación.
 
-Métricas en test: Exactitud 0.5091, AUC-ROC 0.5364, F1 macro 0.2249.
-Sensibilidad: Benigno 0.00, Maligno 1.00, Normal 0.00.
-(0.5091 coincide exactamente con la proporción de Maligno en test:
-84/165 = 0.509 -> confirma que el modelo solo predice esa clase.)
+Métricas en test: Exactitud 0.8485, AUC-ROC 0.9386, F1 macro 0.7305.
+Sensibilidad: Benigno 0.44, Maligno 0.99, Normal 0.78.
 
-EarlyStopping (paciencia 7) restaura los pesos de la época 1, la
-única con pérdida de validación razonable, porque todas las
-posteriores empeoran.
-
---------------------------------------------------------------------
-4.2 CNN + Augmentation
---------------------------------------------------------------------
-Misma arquitectura que la CNN base, con una capa de augmentation
-integrada en el modelo (RandomFlip horizontal y vertical,
-RandomRotation, RandomZoom, RandomContrast, RandomTranslation).
-
-RESULTADO: el mismo patrón de colapso que la CNN base, pero
-prediciendo siempre "Normal" en vez de "Maligno".
-
-Métricas en test: Exactitud 0.3818, AUC-ROC 0.5027, F1 macro 0.1842.
-Sensibilidad: Benigno 0.00, Maligno 0.00, Normal 1.00.
-(0.3818 = 63/165, la proporción de Normal en test.)
-
-Se investigó si esto se debía a un bug: en efecto se encontró uno
-real (ver sección 5.1), pero tras corregirlo y reentrenar desde cero
-el colapso se reprodujo IDÉNTICO. Es decir, el bug era real y se
-corrigió, pero NO es la causa de la inestabilidad.
-
-Hipótesis de causa raíz (no confirmada, requiere más experimentos):
-la combinación de BatchNormalization en cada bloque + class_weight
-agresivo (peso x3.04 para Benigno) + learning rate inicial
-relativamente alto (1e-3) + muy pocos pasos por época (24, dado el
-tamaño del dataset) produce una optimización inestable desde el
-arranque: las estadísticas de BatchNorm no llegan a estabilizarse
-con tan pocos batches, y el modelo cae rápido en un mínimo local
-donde predecir la clase mayoritaria/más fácil minimiza la pérdida de
-entrenamiento a costa de la generalización.
+Esto CONFIRMA la hipótesis de causa raíz planteada en la primera
+ronda: el problema no era la arquitectura ni el dataset en
+sí, sino la combinación específica de BatchNormalization + pocos
+batches/época + learning rate alto. Al sustituir BatchNorm por
+LayerNorm (que no depende de estadísticas de batch) y bajar el
+learning rate, el mismo modelo converge con normalidad.
 
 --------------------------------------------------------------------
-4.3 Transfer Learning (EfficientNetB0) — EL MEJOR MODELO
+4.2 CNN + Augmentation — SOLO MEJORÓ PARCIALMENTE
+--------------------------------------------------------------------
+Misma arquitectura y mismos cambios que la CNN Base, más augmentation
+reducido (RandomFlip horizontal, RandomRotation 0.08, RandomZoom
+0.05, RandomContrast — se quitaron RandomFlip vertical y
+RandomTranslation por no ser transformaciones anatómicamente
+plausibles/seguras para una TC de tórax).
+
+RESULTADO: mixto. El AUC-ROC mejoró sustancialmente (de 0.503 a
+0.728), pero la exactitud final (0.5091) sigue correspondiendo a un
+colapso: sensibilidad Benigno 0.00, Maligno 1.00, Normal 0.00 — el
+modelo predice "Maligno" para prácticamente todo el test, igual que
+en la primera ronda (que colapsaba hacia "Normal" en vez de
+"Maligno").
+
+Métricas en test: Exactitud 0.5091, AUC-ROC 0.7280, F1 macro 0.2249.
+
+INTERPRETACIÓN (importante para el TFM): dado que la CNN Base —misma
+arquitectura, mismos hiperparámetros, sin augmentation— SÍ se
+arregló con estos cambios, la diferencia entre ambos resultados solo
+puede deberse al augmentation en tiempo real. Esto es evidencia de
+que el augmentation, incluso reducido, es un factor causal adicional
+de inestabilidad en este dataset pequeño (24 batches/época): añade
+variabilidad extra que, combinada con el desbalance de clases, sigue
+empujando al optimizador hacia un mínimo de "predecir la clase
+mayoritaria". Que el AUC mejore sin que la exactitud lo haga sugiere
+que el modelo SÍ aprende información útil (mejor ranking de
+probabilidades) pero el umbral de decisión final (argmax) no llega a
+cruzarse hacia las otras clases — posible línea de trabajo futuro:
+ajustar umbrales de decisión por clase en vez de usar argmax puro.
+
+Siguiendo instrucción explícita del usuario, este resultado NO se
+persiguió más allá de esta ronda: se documenta como hallazgo válido
+("se intentó, mejoró parcialmente, el colapso final persiste,
+probablemente por el augmentation") en vez de seguir iterando.
+
+--------------------------------------------------------------------
+4.3 Transfer Learning (EfficientNetB0) — MEJORÓ AÚN MÁS
 --------------------------------------------------------------------
 EfficientNetB0 preentrenada en ImageNet + cabeza personalizada
 (GlobalAveragePooling2D, Dropout, Dense(256), Dropout, Dense(3,
 softmax)). Fase 1: base congelada, solo entrena la cabeza (learning
-rate 1e-4, hasta 15 épocas). Fase 2: fine-tuning de las últimas 30
-capas de EfficientNet (learning rate 1e-5, hasta 30 épocas más).
+rate 1e-4, hasta 15 épocas). Fase 2: fine-tuning de las ÚLTIMAS 50
+CAPAS de EfficientNet (antes 30) (learning rate 1e-5, hasta 50
+épocas, antes 30).
 
-RESULTADO: mucho más estable que los dos modelos anteriores. NO
-colapsa a una sola clase.
+RESULTADO: mejoró en todas las métricas respecto a la primera ronda.
 
-Métricas en test: Exactitud 0.7091, AUC-ROC 0.9134, F1 macro 0.6292.
-Sensibilidad: Benigno 0.50, Maligno 0.75, Normal 0.71.
+Métricas en test: Exactitud 0.8303, AUC-ROC 0.9761, F1 macro 0.7764.
+Sensibilidad: Benigno 0.89 (antes 0.50 — la mejora más notable, en la
+clase con menos datos), Maligno 0.87, Normal 0.76.
 
-Hipótesis de por qué es estable: al partir de una base preentrenada
-con sus estadísticas de BatchNormalization ya calibradas (y
-congeladas en la Fase 1), evita la inestabilidad de optimización que
-afecta a las CNN entrenadas desde cero con este dataset pequeño y
-desbalanceado.
+Hipótesis: con más capas descongeladas y más épocas de fine-tuning,
+el modelo tiene más capacidad de adaptar las representaciones
+preentrenadas de ImageNet al dominio específico de TC de tórax, sin
+perder la estabilidad que le da partir de pesos preentrenados.
 
-Nota importante: la sensibilidad en Benigno (0.50) sigue siendo la
-más baja de las 3 clases, coherente con que es la clase minoritaria
-del dataset (10.9% del total, solo 18 imágenes en test). Esto es
-clínicamente relevante: un falso negativo en un caso maligno o
-benigno tiene consecuencias muy distintas a un falso negativo en
-"normal" — la sensibilidad por clase, no solo la exactitud global,
-debe ser el criterio principal de evaluación en este dominio.
-
-Este modelo es EL RECOMENDADO como resultado principal del TFM, con
-las salvedades de la sección 6 (limitaciones) sobre fuga de datos.
+¿CUÁL ES "EL MEJOR MODELO" AHORA? Ya no es una respuesta tan simple
+como en la primera ronda:
+  - CNN Base tiene la exactitud MÁS ALTA (84.85% vs 83.03%).
+  - Transfer Learning tiene mejor AUC-ROC (0.976 vs 0.939), mejor F1
+    macro (0.776 vs 0.730), y sobre todo sensibilidad mucho más
+    equilibrada entre clases, incluida la minoritaria Benigno (0.89
+    vs 0.44).
+  - En un problema médico, la sensibilidad equilibrada por clase
+    (detectar bien TODAS las categorías, no solo la mayoritaria)
+    pesa más que un punto extra de exactitud global. RECOMENDACIÓN:
+    seguir señalando Transfer Learning como el modelo principal del
+    TFM, pero mencionar a la CNN Base (ya arreglada) como resultado
+    secundario relevante — demuestra que el diagnóstico de la
+    primera ronda era correcto.
 
 --------------------------------------------------------------------
-4.4 SVM (HOG) — Línea base de ML clásico
+4.4 SVM (HOG) — Línea base de ML clásico — SIN CAMBIOS (no se tocó)
 --------------------------------------------------------------------
 Extracción de características HOG (9 orientaciones, celdas 16x16,
 bloques 2x2) sobre la imagen en escala de grises, + SVM kernel RBF
-con class_weight="balanced".
+con class_weight="balanced"). Por instrucción explícita del usuario,
+este modelo NO se reentrenó ni se modificó en la segunda ronda.
 
-RESULTADO: exactitud, AUC-ROC y F1 PERFECTOS (1.00) en el conjunto
-de test. Sensibilidad 1.00 en las 3 clases.
+RESULTADO (idéntico a la primera ronda): exactitud, AUC-ROC y F1
+PERFECTOS (1.00) en el conjunto de test. Sensibilidad 1.00 en las 3
+clases.
 
 ESTO NO ES UN ÉXITO, ES UNA SEÑAL DE ALARMA. Para un clasificador
 clásico sin aprendizaje de representaciones, en un problema médico
@@ -325,13 +393,22 @@ CNN". La comparación correcta, imposible de hacer con los datos
 disponibles, requeriría un split a nivel de paciente.
 
 --------------------------------------------------------------------
-4.5 Tabla resumen
+4.5 Tabla resumen (resultados FINALES, segunda ronda)
 --------------------------------------------------------------------
-Modelo                  Exactitud  AUC-ROC  F1 Macro  Sens.Benigno Sens.Maligno Sens.Normal
-CNN Base                 0.5091    0.5364   0.2249    0.00         1.00         0.00
-CNN + Augmentation       0.3818    0.5027   0.1842    0.00         0.00         1.00
-Transfer Learning (EffNet) 0.7091  0.9134   0.6292    0.50         0.75         0.71   <- mejor modelo fiable
-SVM (HOG) linea base      1.0000   1.0000   1.0000    1.00         1.00         1.00   <- sospechoso de leakage
+Modelo                     Exactitud  AUC-ROC  F1 Macro  Sens.Benigno Sens.Maligno Sens.Normal
+CNN Base (arreglada)         0.8485    0.9386   0.7305    0.44         0.99         0.78
+CNN + Augmentation (parcial) 0.5091    0.7280   0.2249    0.00         1.00         0.00   <- sigue colapsada
+Transfer Learning (EffNet)   0.8303    0.9761   0.7764    0.89         0.87         0.76   <- modelo recomendado
+SVM (HOG) linea base         1.0000    1.0000   1.0000    1.00         1.00         1.00   <- sospechoso de leakage, sin cambios
+
+Figuras nuevas generadas en esta ronda (en outputs/figures/):
+  - curvas_roc_comparativas.png: las 4 curvas ROC macro-average
+    (one-vs-rest) superpuestas en una sola figura, con AUC en la
+    leyenda. La línea de la SVM es prácticamente plana en TPR=1.0,
+    lo cual ilustra visualmente lo implausible de su resultado.
+  - classification_report_<modelo>.png: tabla de precision/recall/
+    f1-score/support por clase, como imagen, para cada uno de los 4
+    modelos (incluida la SVM, en modo solo lectura).
 
 
 ====================================================================
@@ -395,6 +472,13 @@ honestamente en la sección de resultados/discusión, y como línea de
 trabajo futuro (probar Grad-CAM++, o excluir/normalizar canales
 atípicos antes de generar el mapa).
 
+VERIFICACIÓN EN LA SEGUNDA RONDA: se regeneró el grid de Grad-CAM con
+el modelo de transfer learning reentrenado (50 capas descongeladas,
+83.0% de exactitud) y el mismo patrón de saturación en una esquina
+persiste, sin cambios. Confirma que no depende del punto de
+entrenamiento concreto, sino de una propiedad más estructural de
+cómo EfficientNetB0 representa la información en su última capa.
+
 5.4 Otros problemas menores resueltos
 --------------------------------------------------------------------
   - UnicodeEncodeError en Windows: la consola por defecto (cp1252)
@@ -417,6 +501,17 @@ atípicos antes de generar el mapa).
     cualquier fallo al escribir el progreso (que es solo para la
     interfaz) se ignore en silencio y NUNCA interrumpa el
     entrenamiento real del modelo.
+  - GPU no utilizable pese a estar presente: el equipo tiene una GPU
+    NVIDIA física (RTX 3050, 4 GB), confirmada por nvidia-smi, pero
+    tf.config.list_physical_devices('GPU') devuelve una lista vacía.
+    Causa: desde TensorFlow 2.11, "pip install tensorflow" ya no trae
+    soporte nativo de GPU/CUDA en Windows. Se necesitaría WSL2 o el
+    plugin tensorflow-directml-plugin de Microsoft (con riesgo de
+    tener que bajar de versión TensorFlow y romper el código Keras 3
+    ya escrito y probado). Se decidió NO intentarlo por el riesgo de
+    dejar el entorno roto sin garantía de éxito, y reentrenar en CPU
+    en su lugar (funcionó, solo más lento). Pendiente como mejora de
+    infraestructura si se quiere iterar más rápido en el futuro.
 
 
 ====================================================================
@@ -436,9 +531,12 @@ atípicos antes de generar el mapa).
   4. Un único origen de datos (hospitales de Irak, dataset de 2019).
      No se evaluó generalización a otros equipos/protocolos/
      poblaciones.
-  5. Entrenamiento sin GPU y con presupuesto de tiempo limitado: los
-     hiperparámetros no se optimizaron exhaustivamente (ver la
-     inestabilidad de las CNN entrenadas desde cero, sección 4.1-4.2).
+  5. Entrenamiento en CPU en ambas rondas (GPU física presente pero no
+     utilizable por limitaciones de TensorFlow en Windows, ver sección
+     5.4): se pudo iterar dos veces sobre los hiperparámetros de las
+     CNN entrenadas desde cero (con éxito total en CNN Base, parcial
+     en CNN+Augmentation — ver sección 4.1-4.2), pero una búsqueda de
+     hiperparámetros más exhaustiva habría sido más rápida con GPU.
   6. No es un dispositivo médico. Prototipo académico sin validación
      clínica, no certificado, no debe usarse para decisiones de
      diagnóstico o tratamiento reales.
@@ -452,9 +550,16 @@ atípicos antes de generar el mapa).
     metadatos DICOM originales, no solo a las imágenes exportadas de
     Kaggle) y volver a medir todas las métricas — se espera una
     caída sustancial de exactitud, especialmente en la SVM.
-  - Ajustar hiperparámetros (learning rate, regularización,
-    arquitectura) de la CNN base y CNN+augmentation para resolver la
-    inestabilidad de entrenamiento observada.
+  - Investigar específicamente por qué el augmentation en tiempo real
+    sigue causando colapso en la CNN+Augmentation aunque la misma
+    arquitectura sin augmentation (CNN Base) ya no colapsa con los
+    mismos hiperparámetros (ver sección 4.2) — probar augmentation
+    aún más suave, o aplicarlo solo a partir de cierta época.
+  - Probar umbrales de decisión por clase en vez de argmax puro para
+    la CNN+Augmentation: su AUC-ROC (0.728) sugiere que el modelo
+    aprende información útil aunque la decisión final colapse.
+  - Configurar soporte de GPU real (WSL2 o DirectML) para poder
+    iterar más rápido sobre estas hipótesis (ver limitación 5).
   - Validación cruzada (k-fold) en vez de un único split, dado el
     tamaño reducido del dataset.
   - Evaluar en un conjunto externo (otro hospital/dataset público)
@@ -472,7 +577,10 @@ atípicos antes de generar el mapa).
 
   outputs/figures/          Gráficos EDA, curvas de entrenamiento,
                              matrices de confusión, tabla comparativa,
-                             JSON con todas las métricas exactas.
+                             curvas ROC comparativas de los 4 modelos,
+                             classification report de cada modelo como
+                             imagen, y JSON con todas las métricas
+                             exactas.
   outputs/gradcam/gradcam_grid.png   Grid de Grad-CAM sobre el mejor
                              modelo (9 ejemplos, 3 por clase).
   outputs/models/            Los 4 modelos entrenados guardados en

@@ -24,26 +24,44 @@ np.random.seed(SEED)
 
 
 def build_cnn_base():
-    """CNN de 3 bloques convolucionales."""
+    """
+    CNN de 3 bloques convolucionales.
+
+    Cambios respecto a la versión original (ver README.md / Hallazgos para
+    el diagnóstico completo del colapso de entrenamiento):
+      - LayerNormalization en vez de BatchNormalization: con solo 24 batches
+        por época, las estadísticas de BatchNorm (media/varianza por batch)
+        no llegaban a estabilizarse. LayerNormalization normaliza por
+        muestra (no depende de estadísticas acumuladas del batch), lo que
+        la hace más robusta con datasets pequeños y pocos pasos por época.
+      - learning_rate más bajo (ver config.LEARNING_RATE): el valor anterior
+        (1e-3) era demasiado alto para este dataset.
+      - Loss con label_smoothing=0.1: suaviza las etiquetas objetivo
+        (en vez de exigir 100% de confianza en la clase correcta), lo que
+        penaliza menos el error y reduce el sobreajuste temprano. Requiere
+        CategoricalCrossentropy (SparseCategoricalCrossentropy no soporta
+        label_smoothing en esta versión de Keras), por eso main() convierte
+        las etiquetas a one-hot antes de entrenar.
+    """
     model = keras.Sequential([
         # Bloque 1
         layers.Conv2D(32, (3, 3), activation="relu", padding="same",
                       input_shape=(IMG_SIZE, IMG_SIZE, 3)),
-        layers.BatchNormalization(),
+        layers.LayerNormalization(),
         layers.Conv2D(32, (3, 3), activation="relu", padding="same"),
         layers.MaxPooling2D((2, 2)),
         layers.Dropout(0.25),
 
         # Bloque 2
         layers.Conv2D(64, (3, 3), activation="relu", padding="same"),
-        layers.BatchNormalization(),
+        layers.LayerNormalization(),
         layers.Conv2D(64, (3, 3), activation="relu", padding="same"),
         layers.MaxPooling2D((2, 2)),
         layers.Dropout(0.25),
 
         # Bloque 3
         layers.Conv2D(128, (3, 3), activation="relu", padding="same"),
-        layers.BatchNormalization(),
+        layers.LayerNormalization(),
         layers.Conv2D(128, (3, 3), activation="relu", padding="same"),
         layers.MaxPooling2D((2, 2)),
         layers.Dropout(0.25),
@@ -57,7 +75,7 @@ def build_cnn_base():
 
     model.compile(
         optimizer=keras.optimizers.Adam(learning_rate=LEARNING_RATE),
-        loss="sparse_categorical_crossentropy",
+        loss=keras.losses.CategoricalCrossentropy(label_smoothing=0.1),
         metrics=["accuracy"]
     )
     return model
@@ -106,11 +124,18 @@ def main():
         X_val, y_val = data["X_val"], data["y_val"]
         print(f"  → Train: {X_train.shape}, Val: {X_val.shape}")
 
-        # Pesos de clase para manejar desbalance
+        # Pesos de clase para manejar desbalance (a partir de las etiquetas
+        # sparse originales; el diccionario resultante funciona igual con
+        # fit() aunque y sea one-hot, ver más abajo)
         from sklearn.utils.class_weight import compute_class_weight
         class_weights = compute_class_weight("balanced", classes=np.unique(y_train), y=y_train)
         class_weight_dict = dict(enumerate(class_weights))
         print(f"  → Pesos de clase: {class_weight_dict}")
+
+        # CategoricalCrossentropy (para poder usar label_smoothing) necesita
+        # etiquetas one-hot en vez de índices de clase.
+        y_train_cat = keras.utils.to_categorical(y_train, num_classes=NUM_CLASSES)
+        y_val_cat = keras.utils.to_categorical(y_val, num_classes=NUM_CLASSES)
 
         # Construir modelo
         print("\n[2/4] Construyendo modelo...")
@@ -131,8 +156,8 @@ def main():
         # Entrenar
         print("\n[3/4] Entrenando...")
         history = model.fit(
-            X_train, y_train,
-            validation_data=(X_val, y_val),
+            X_train, y_train_cat,
+            validation_data=(X_val, y_val_cat),
             epochs=EPOCHS_BASE,
             batch_size=BATCH_SIZE,
             class_weight=class_weight_dict,
@@ -148,7 +173,7 @@ def main():
         plot_training_history(history, "curvas_cnn_base.png")
 
         # Evaluación rápida en validación
-        val_loss, val_acc = model.evaluate(X_val, y_val, verbose=0)
+        val_loss, val_acc = model.evaluate(X_val, y_val_cat, verbose=0)
         print(f"\n  Resultado en validación → Loss: {val_loss:.4f}, Accuracy: {val_acc:.4f}")
         print("\n✓ Entrenamiento CNN Base completado.")
 

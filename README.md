@@ -147,9 +147,20 @@ pip install -r requirements.txt
   ```
   `requirements.txt` ya fija este rango para evitar el problema en una
   instalación limpia.
-- Este proyecto se desarrolló y probó **sin GPU** (solo CPU). El
-  entrenamiento es funcional pero lento; ver tiempos orientativos en la
-  sección [Metodología](#metodología).
+- Este proyecto se desarrolló y probó **sin GPU** (solo CPU), pese a que el
+  equipo de desarrollo sí tiene una GPU NVIDIA física (RTX 3050). El motivo:
+  desde TensorFlow 2.11, el paquete `pip install tensorflow` estándar **ya
+  no incluye soporte nativo de GPU/CUDA en Windows** — `tf.config.list_physical_devices('GPU')`
+  devuelve una lista vacía aunque `nvidia-smi` detecte la tarjeta
+  correctamente. Para usar la GPU en Windows hoy hacen falta pasos
+  adicionales: WSL2 con una instalación Linux de TensorFlow, o el plugin
+  `tensorflow-directml-plugin` de Microsoft (typically requiere fijar una
+  versión de TensorFlow más antigua, con el riesgo de romper código escrito
+  para Keras 3). No se intentó ninguna de las dos por el riesgo de dejar el
+  entorno en un estado peor sin garantía de que funcionara; el
+  entrenamiento es funcional pero lento en CPU. Ver tiempos orientativos en
+  la sección [Metodología](#metodología), y la nota correspondiente en
+  [Trabajo futuro](#trabajo-futuro).
 
 ## Cómo ejecutar el pipeline
 
@@ -163,9 +174,9 @@ export PYTHONIOENCODING=utf-8   # o $env:PYTHONIOENCODING="utf-8" en PowerShell
 
 python 01_eda.py                # Análisis exploratorio → outputs/figures/
 python 02_preprocessing.py      # Split 70/15/15 → outputs/splits/dataset_splits.npz
-python 03_train_cnn_base.py     # ~10-20 min en CPU
-python 04_train_cnn_aug.py      # ~15-30 min en CPU
-python 05_train_transfer.py     # ~20-45 min en CPU (2 fases)
+python 03_train_cnn_base.py     # ~40-60 min en CPU (hasta 80 épocas, paciencia 12)
+python 04_train_cnn_aug.py      # ~50-80 min en CPU (hasta 80 épocas, paciencia 12)
+python 05_train_transfer.py     # ~20-35 min en CPU (2 fases, hasta 15+50 épocas)
 python 06_evaluate.py           # Evaluación comparativa en test
 python 07_gradcam.py            # Mapas de activación del mejor modelo
 python 08_baseline_ml.py        # Línea base SVM + HOG (~1-2 min)
@@ -276,17 +287,22 @@ construir esas extensiones, no una versión final.
 
 ### Modelos
 
+*(Arquitecturas tal como quedaron tras la segunda ronda de ajustes — ver
+[Hallazgos](#hallazgos-y-análisis) para el porqué de cada cambio.)*
+
 | Modelo | Arquitectura | Particularidad |
 |---|---|---|
-| **CNN Base** | 3 bloques Conv2D(32→64→128) + BatchNorm + MaxPooling + GAP + Dense(256) | Sin aumento de datos |
-| **CNN + Augmentation** | Misma arquitectura | Capa de augmentation integrada (flip, rotación, zoom, contraste, traslación) |
-| **Transfer Learning** | EfficientNetB0 preentrenada en ImageNet + cabeza personalizada | Fase 1: base congelada (15 épocas). Fase 2: fine-tuning de las últimas 30 capas (hasta 30 épocas) |
-| **SVM (línea base)** | HOG (9 orientaciones, celdas 16×16) + SVM kernel RBF | Método clásico de ML, sin deep learning |
+| **CNN Base** | 3 bloques Conv2D(32→64→128) + **LayerNorm** + MaxPooling + GAP + Dense(256) | Sin aumento de datos. `CategoricalCrossentropy(label_smoothing=0.1)` |
+| **CNN + Augmentation** | Misma arquitectura | Augmentation reducido: flip horizontal, rotación ±0.08, zoom ±0.05, contraste (sin flip vertical ni traslación) |
+| **Transfer Learning** | EfficientNetB0 preentrenada en ImageNet + cabeza personalizada | Fase 1: base congelada (hasta 15 épocas). Fase 2: fine-tuning de las **últimas 50 capas** (hasta 50 épocas) |
+| **SVM (línea base)** | HOG (9 orientaciones, celdas 16×16) + SVM kernel RBF | Método clásico de ML, sin deep learning — sin cambios entre rondas |
 
 Todos los modelos de Keras usan `class_weight="balanced"` para compensar el
-desbalance de clases, `EarlyStopping` sobre `val_loss` y
-`ReduceLROnPlateau`. El entrenamiento se ejecutó **enteramente en CPU** (sin
-GPU disponible en el equipo de desarrollo).
+desbalance de clases, `EarlyStopping` (paciencia 12) sobre `val_loss` y
+`ReduceLROnPlateau`. Learning rate 1×10⁻⁴ (CNN base/aug) y 1×10⁻⁴ /
+1×10⁻⁵ (transfer learning, fase 1/fase 2). El entrenamiento se ejecutó
+**enteramente en CPU** (ver nota sobre GPU en
+[Instalación](#instalación)).
 
 ## Resultados
 
@@ -295,93 +311,152 @@ GPU disponible en el equipo de desarrollo).
 y `08_baseline_ml.py`. Valores medidos sobre el conjunto de **test**, 165
 imágenes.)*
 
+**Segunda ronda de entrenamiento** (LayerNormalization en vez de
+BatchNormalization, learning rate 1e-4, label smoothing 0.1, patience 12,
+hasta 80/50 épocas, augmentation reducido en la CNN+Aug, y fine-tuning de
+las últimas 50 capas en vez de 30 en transfer learning — ver
+[Hallazgos](#hallazgos-y-análisis) para el detalle de cada cambio y su
+efecto). Se entrenó íntegramente en CPU: no había soporte de GPU disponible
+en la instalación de TensorFlow del equipo (ver nota en
+[Instalación](#instalación)).
+
 | Modelo | Exactitud | AUC-ROC | F1 Macro | Sensib. Benigno | Sensib. Maligno | Sensib. Normal |
 |---|---:|---:|---:|---:|---:|---:|
-| CNN Base | 0.5091 | 0.5364 | 0.2249 | 0.00 | 1.00 | 0.00 |
-| CNN + Augmentation | 0.3818 | 0.5027 | 0.1842 | 0.00 | 0.00 | 1.00 |
-| **Transfer Learning (EfficientNetB0)** | **0.7091** | **0.9134** | **0.6292** | 0.50 | 0.75 | 0.71 |
+| **CNN Base** | **0.8485** | 0.9386 | 0.7305 | 0.44 | 0.99 | 0.78 |
+| CNN + Augmentation | 0.5091 ⚠️ | 0.7280 | 0.2249 | 0.00 | 1.00 | 0.00 |
+| **Transfer Learning (EfficientNetB0)** | 0.8303 | **0.9761** | **0.7764** | **0.89** | 0.87 | 0.76 |
 | SVM (HOG) — Línea base | 1.0000 ⚠️ | 1.0000 ⚠️ | 1.0000 ⚠️ | 1.00 | 1.00 | 1.00 |
 
-⚠️ Los resultados perfectos de la línea base SVM no reflejan una capacidad de
-generalización real — ver el análisis de fuga de datos más abajo. **El mejor
-modelo *evaluable de forma fiable* es la Transfer Learning con EfficientNetB0.**
+⚠️ Los resultados perfectos de la SVM siguen sin ser creíbles (fuga de datos,
+sin cambios — no se retocó ese modelo). La CNN + Augmentation mejoró su
+AUC-ROC pero sigue colapsando a nivel de predicción final (ver Hallazgos).
+
+**¿Cuál es "el mejor" ahora?** Depende del criterio: la **CNN Base** tiene
+la exactitud global más alta (84.85%), pero la **Transfer Learning** tiene
+mejor AUC-ROC (0.976), mejor F1 macro, y sobre todo una sensibilidad mucho
+más equilibrada entre clases — incluida la clase minoritaria Benigno
+(0.89, frente a 0.44 de la CNN Base). En un problema médico, esa
+sensibilidad equilibrada por clase pesa más que un punto extra de
+exactitud global, así que **Transfer Learning sigue siendo el modelo
+recomendado**, aunque ahora con una CNN Base mucho más competitiva de lo
+que era en la primera ronda.
+
+Figuras nuevas de esta ronda: `curvas_roc_comparativas.png` (las 4 curvas
+ROC macro-average superpuestas) y `classification_report_<modelo>.png`
+(precision/recall/f1/support por clase, como imagen, para cada uno de los
+4 modelos) en `outputs/figures/`.
 
 ## Hallazgos y análisis
 
-### 1. Las CNN entrenadas desde cero colapsan a predecir una única clase
+### 1. Primera ronda: las CNN entrenadas desde cero colapsan a predecir una única clase
 
-Tanto la **CNN Base** como la **CNN + Augmentation** muestran un patrón de
-entrenamiento idéntico e inestable: la exactitud en entrenamiento sube con
-normalidad (hasta 78-84%), pero la pérdida de validación **crece de forma
-monótona desde la primera época** (p. ej., CNN Base: de 1.23 en época 1 a
-10.64 en época 8) mientras la exactitud de validación queda **congelada** en
-un único valor durante todo el entrenamiento. Al inspeccionar las
-predicciones se confirma que ambos modelos colapsan a predecir **una sola
-clase para todo el conjunto de prueba**:
+En la primera ronda de entrenamiento, tanto la **CNN Base** como la
+**CNN + Augmentation** mostraban un patrón idéntico e inestable: la
+exactitud en entrenamiento subía con normalidad (hasta 78-84%), pero la
+pérdida de validación **crecía de forma monótona desde la primera época**
+(p. ej., CNN Base: de 1.23 en época 1 a 10.64 en época 8) mientras la
+exactitud de validación quedaba **congelada** en un único valor. Ambos
+modelos colapsaban a predecir **una sola clase para todo el conjunto de
+prueba**: CNN Base siempre "Maligno" (exactitud 50.9%, la proporción de
+Maligno en el conjunto), CNN + Augmentation siempre "Normal" (exactitud
+38.2%). El `EarlyStopping` (paciencia 7) terminaba restaurando los pesos
+de la época 1, la única con pérdida de validación razonable.
 
-- CNN Base → predice siempre "Maligno" (sensibilidad 1.00 en Maligno, 0.00 en
-  las otras dos clases; exactitud 50.9%, que coincide con la proporción de
-  Maligno en el conjunto).
-- CNN + Augmentation → predice siempre "Normal" (sensibilidad 1.00 en Normal,
-  0.00 en las otras dos; exactitud 38.2%).
+**Hipótesis de causa raíz** planteada en esa ronda: la combinación de
+`BatchNormalization` en cada bloque + `class_weight="balanced"` agresivo
+(peso ×3.04 para Benigno) + *learning rate* alto (1×10⁻³) + muy pocos
+pasos por época (24) producía una optimización inestable: las
+estadísticas de `BatchNormalization` no llegaban a estabilizarse con tan
+pocos batches por época.
 
-El `EarlyStopping` (paciencia 7, `restore_best_weights=True`) termina
-restaurando los pesos de la **época 1**, la única con una pérdida de
-validación razonable, porque todas las épocas posteriores empeoran.
+Durante esa ronda también se detectó y corrigió un **bug real**: la capa
+de augmentation se conectaba con `training=True` fijado explícitamente,
+lo que dejaba la augmentation activa incluso en `evaluate()`/`predict()`.
+Se corrigió, y **se confirmó que ese bug no era la causa de la
+inestabilidad** (el colapso se reprodujo igual tras corregirlo), aunque sí
+mejoró la evaluación del modelo de transfer learning de esa ronda.
 
-**Hipótesis de causa raíz** (no se descarta con los recursos de este
-proyecto, ver Trabajo futuro): la combinación de `BatchNormalization` en
-cada bloque convolucional + `class_weight="balanced"` agresivo (peso ×3.04
-para Benigno) + *learning rate* inicial relativamente alto (1×10⁻³) + muy
-pocos pasos por época (24, dado el tamaño del dataset) parece producir una
-optimización inestable desde el arranque: las estadísticas de
-`BatchNormalization` no llegan a estabilizarse con tan pocos batches por
-época, y el modelo cae rápidamente en un mínimo local donde predecir la
-clase mayoritaria (o la más "fácil" de sobreajustar con el augmentation
-activo) minimiza la pérdida de entrenamiento a costa de la generalización.
+### 2. Segunda ronda: el diagnóstico se confirmó — la CNN Base se arregló por completo
 
-Durante el desarrollo se detectó y corrigió un **bug real** en ambos
-scripts (`04_train_cnn_aug.py`, `05_train_transfer.py`): la capa de
-aumento de datos se conectaba con `training=True` fijado explícitamente al
-construir el grafo del modelo, lo cual —a diferencia de lo que cabría
-esperar— **deja la augmentation activa permanentemente**, incluso dentro de
-`model.evaluate()` o `model.predict()`, porque en Keras un valor de
-`training` fijado explícitamente en la llamada a una capa queda "clavado"
-para ese nodo del grafo y ya no seguirá el modo (entrenamiento/inferencia)
-de la llamada al modelo completo. Se corrigió eliminando ese argumento
-para que el modo se propague correctamente. **Se confirmó que este bug no
-era la causa de la inestabilidad**: tras corregirlo y reentrenar la CNN +
-Augmentation desde cero, el colapso a una única clase se reprodujo de forma
-idéntica. Sin embargo, la corrección sí era necesaria por corrección
-metodológica (evaluación determinista) y **mejoró de forma medible** los
-resultados del modelo de Transfer Learning (ver punto 2).
+Con GPU solicitada pero no disponible de forma nativa en Windows para esta
+instalación de TensorFlow (ver [Instalación](#instalación)), se reentrenó
+en CPU aplicando directamente la hipótesis de causa raíz de la ronda
+anterior:
 
-### 2. Transfer learning es sustancialmente más estable y preciso
+- `LayerNormalization` en vez de `BatchNormalization` en los 3 bloques
+  convolucionales (normaliza por muestra, no depende de estadísticas de
+  batch — inmune al problema de pocos batches/época).
+- Learning rate bajado de 1×10⁻³ a **1×10⁻⁴**.
+- `label_smoothing=0.1` en la loss (requirió cambiar a
+  `CategoricalCrossentropy` + etiquetas one-hot, ver `03_train_cnn_base.py`).
+- `EarlyStopping` con paciencia subida de 7 a **12**, y presupuesto de
+  épocas subido de 50 a **80**.
 
-El modelo de **Transfer Learning (EfficientNetB0)** no muestra el colapso
-de los modelos anteriores: alcanza 70.9% de exactitud y **0.913 de AUC-ROC**
-en test, con sensibilidad razonable en las 3 clases (Benigno 0.50, Maligno
-0.75, Normal 0.71). La hipótesis más plausible es que, al partir de una
-base preentrenada en ImageNet con sus estadísticas de
-`BatchNormalization` ya calibradas (y congeladas en la Fase 1), el modelo
-evita la inestabilidad de optimización que afecta a las CNN entrenadas
-desde cero con este dataset pequeño y desbalanceado.
+**Resultado: el colapso de la CNN Base desapareció por completo.**
+Exactitud en test: de 50.9% a **84.85%**; AUC-ROC: de 0.536 a **0.939**;
+sensibilidad en Maligno 0.99, en Normal 0.78, y en Benigno 0.44 (la más
+baja, pero ya no es cero). Las curvas de entrenamiento muestran una
+convergencia normal, sin la explosión de pérdida de validación de la
+primera ronda. **Esto confirma la hipótesis de causa raíz**: el problema
+no era la arquitectura en sí ni el dataset en sí, sino específicamente la
+combinación de `BatchNormalization` con pocos batches por época y un
+learning rate demasiado alto para ese régimen.
 
-Después de corregir el bug de `training=True` descrito arriba, el
-AUC-ROC del modelo de transfer learning mejoró de 0.907 a **0.913** y, más
-notablemente, la sensibilidad en la clase minoritaria (Benigno) pasó de
-**0.11 a 0.50** — evidencia de que evaluar con augmentation activo
-introducía ruido que perjudicaba especialmente a la clase con menos
-ejemplos (120 imágenes en total, 18 en test).
+### 3. La CNN + Augmentation solo mejoró parcialmente: el colapso persiste a nivel de decisión final
 
-Aun así, la sensibilidad en Benigno (0.50) sigue siendo la más baja de las
-tres clases, coherente con que es la clase minoritaria del dataset (10.9%
-del total). Esto es clínicamente relevante: un falso negativo en un caso
-maligno o benigno tiene consecuencias muy distintas a un falso negativo en
-"normal", por lo que la sensibilidad por clase —no solo la exactitud
-global— debe ser el criterio principal de evaluación en este dominio.
+Se aplicaron exactamente los mismos cambios a la CNN + Augmentation, más
+una reducción del augmentation en sí (se quitó `RandomFlip("vertical")` y
+`RandomTranslation`, y se redujo la magnitud de `RandomRotation` y
+`RandomZoom` — ver `04_train_cnn_aug.py`). El resultado es mixto:
 
-### 3. La línea base SVM+HOG con 100% de exactitud es una señal de alarma, no un éxito
+- El **AUC-ROC mejoró sustancialmente**, de 0.503 a **0.728** — la red sí
+  está aprendiendo a ordenar mejor sus probabilidades entre clases.
+- Pero la **exactitud final (50.9%) sigue siendo la de un colapso**: la
+  matriz de confusión confirma que el modelo predice "Maligno" para
+  prácticamente todo el conjunto de test (sensibilidad 1.00 en Maligno,
+  0.00 en Benigno y Normal) — el mismo patrón de la primera ronda, solo
+  que ahora colapsando hacia la clase mayoritaria en vez de hacia Normal.
+
+**Lectura de este resultado:** dado que la CNN Base (arquitectura
+idéntica, mismos hiperparámetros, sin augmentation) sí se arregló por
+completo con los mismos cambios, la diferencia entre ambos resultados solo
+puede deberse al augmentation en tiempo real. La hipótesis más plausible
+es que, incluso reducido, el augmentation introduce suficiente variabilidad
+adicional en cada batch como para que, combinado con un dataset ya pequeño
+(24 batches/época) y el desbalance de clases, el optimizador siga
+encontrando un mínimo donde predecir la clase mayoritaria es "más fácil"
+que aprender la variación real entre clases. Que el AUC mejore sin que la
+exactitud lo haga sugiere que el modelo aprende información útil (mejor
+*ranking* de probabilidades) pero el umbral de decisión final (argmax) no
+llega a cruzarse hacia las otras clases — sería candidato a ajustar
+umbrales de decisión por clase en vez de usar argmax puro, como trabajo
+futuro. Siguiendo el criterio del propio usuario del proyecto, este
+resultado se documenta como válido en vez de perseguir más iteraciones:
+confirma que **el augmentation, no solo la normalización o el learning
+rate, es un factor causal de la inestabilidad en este dataset pequeño**.
+
+### 4. Transfer learning mejoró más al descongelar más capas y entrenar más épocas
+
+Con GPU no disponible, se reentrenó igualmente en CPU, descongelando las
+**últimas 50 capas** de EfficientNetB0 en la Fase 2 (antes 30) y subiendo
+el presupuesto de la Fase 2 de 30 a **50 épocas**. Resultado: exactitud de
+70.9% → **83.0%**, AUC-ROC de 0.913 → **0.976**, y sensibilidad en Benigno
+de 0.50 → **0.89** (la mejora más notable, en la clase con menos datos).
+Maligno bajó ligeramente de recall (0.87 vs 0.75 antes, en realidad
+*sube*) y Normal se mantiene similar (0.76). La hipótesis: con más
+capas descongeladas y más épocas de fine-tuning, el modelo tiene más
+capacidad de adaptar las representaciones preentrenadas de ImageNet al
+dominio específico de TC de tórax, sin perder la estabilidad que le da
+partir de pesos preentrenados (a diferencia de las CNN entrenadas desde
+cero).
+
+Con estos resultados, la comparación entre CNN Base (84.85% exactitud) y
+Transfer Learning (83.0% exactitud, pero mejor AUC-ROC y mejor
+sensibilidad equilibrada) ya no es tan unilateral como en la primera
+ronda — ver la discusión en la sección [Resultados](#resultados) sobre
+cuál conviene reportar como "el mejor modelo".
+
+### 5. La línea base SVM+HOG con 100% de exactitud es una señal de alarma, no un éxito
 
 Como se anticipó en las [Limitaciones](#limitaciones-y-consideraciones-éticas),
 la SVM con características HOG alcanza exactitud, AUC-ROC y F1 **perfectos
@@ -399,7 +474,7 @@ como que "SVM + HOG supera a las CNN"** — la comparación correcta,
 imposible de hacer con los datos disponibles, requeriría un split a nivel
 de paciente.
 
-### 4. Grad-CAM revela un problema de interpretabilidad en el modelo de transfer learning
+### 6. Grad-CAM revela un problema de interpretabilidad en el modelo de transfer learning
 
 Al generar los mapas Grad-CAM sobre el modelo de Transfer Learning (el
 mejor de los 3 modelos Keras) se encontró un problema técnico adicional,
@@ -442,6 +517,14 @@ learning deben interpretarse con cautela — actualmente no ofrecen una
 explicación fiable de en qué se basa el modelo para clasificar cada
 imagen, lo cual es en sí mismo un hallazgo relevante sobre las
 limitaciones de explicabilidad del sistema.
+
+**Verificación tras la segunda ronda de entrenamiento:** se regeneró el
+grid de Grad-CAM con el modelo de transfer learning reentrenado (50 capas
+descongeladas, 83.0% de exactitud) y **el mismo patrón de saturación en
+una esquina persiste, sin cambios**. Esto refuerza que no depende del
+punto de entrenamiento concreto del modelo, sino de una propiedad más
+estructural de cómo EfficientNetB0 representa la información en su última
+capa convolucional.
 
 ## Limitaciones y consideraciones éticas
 
@@ -491,9 +574,22 @@ limitaciones de explicabilidad del sistema.
   metadatos DICOM originales del NCCD/IOSH, no solo a las imágenes
   exportadas), y volver a medir todas las métricas — se espera una caída
   sustancial de exactitud, especialmente en la línea base SVM.
-- Ajustar hiperparámetros (learning rate, regularización, arquitectura) de
-  la CNN base y la CNN con augmentation para resolver la inestabilidad de
-  entrenamiento observada.
+- Investigar específicamente **por qué el augmentation en tiempo real
+  sigue causando colapso en la CNN + Augmentation** aunque la misma
+  arquitectura sin augmentation (CNN Base) ya no colapsa con los mismos
+  hiperparámetros (ver Hallazgos #3) — por ejemplo, probar con
+  augmentation aún más suave, o aplicado solo a partir de cierta época
+  (*curriculum*), en vez de desde el principio.
+- Probar **umbrales de decisión por clase** en vez de `argmax` puro para
+  la CNN + Augmentation: su AUC-ROC (0.728) sugiere que el modelo sí
+  aprende información útil aunque la decisión final colapse, lo que podría
+  indicar que el problema está más en el umbral que en el modelo en sí.
+- Configurar soporte de GPU real para este proyecto (WSL2, o el plugin
+  DirectML de Microsoft para Windows) — permitiría iterar mucho más rápido
+  sobre estas hipótesis; en esta ronda se intentó pero la instalación de
+  TensorFlow del equipo no tenía soporte nativo de GPU en Windows (ver
+  [Instalación](#instalación)), así que todo el reentrenamiento se hizo en
+  CPU.
 - Validación cruzada (k-fold) en lugar de un único split, dado el tamaño
   reducido del dataset.
 - Evaluar en un conjunto externo (otro hospital/dataset público de TC de

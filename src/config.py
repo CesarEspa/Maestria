@@ -26,11 +26,13 @@ NUM_CLASSES = 3
 # ── Hiperparámetros ───────────────────────────────────────────────
 IMG_SIZE = 224          # Resolución de entrada (224x224 para compatibilidad con transfer learning)
 BATCH_SIZE = 32
-EPOCHS_BASE = 50        # CNN base y CNN+aug
-EPOCHS_TRANSFER = 30    # Transfer learning (converge más rápido)
-LEARNING_RATE = 1e-3
+EPOCHS_BASE = 80        # CNN base y CNN+aug (subido de 50; con LR más bajo y más paciencia
+                        # necesitan más margen para converger antes de que EarlyStopping corte)
+EPOCHS_TRANSFER = 50    # Transfer learning, fase de fine-tuning (subido de 30)
+LEARNING_RATE = 1e-4    # Bajado de 1e-3: el valor anterior era parte de la causa de la
+                        # inestabilidad de la CNN base/aug (ver Hallazgos en README.md)
 LEARNING_RATE_TRANSFER = 1e-4
-PATIENCE = 7            # Early stopping
+PATIENCE = 12           # Early stopping (subido de 7, para dar más margen con el LR más bajo)
 
 # ── Semilla para reproducibilidad ─────────────────────────────────
 SEED = 42
