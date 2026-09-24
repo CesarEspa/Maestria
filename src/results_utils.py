@@ -7,11 +7,18 @@ from config import FIGURES_DIR, GRADCAM_DIR
 
 # (nombre de archivo, título a mostrar)
 FIGURE_SPECS = [
-    ("tabla_comparativa.png", "Tabla comparativa"),
+    ("tabla_comparativa.png", "Tabla comparativa — sensibilidad"),
+    ("tabla_comparativa_especificidad.png", "Tabla comparativa — especificidad"),
+    ("sensibilidad_especificidad.png", "Sensibilidad vs. especificidad — 4 modelos"),
+    ("curvas_roc_comparativas.png", "Curvas ROC comparativas — 4 modelos"),
     ("confusion_matrix_cnn_base.png", "Matriz de confusión — CNN Base"),
     ("confusion_matrix_cnn_augmentation.png", "Matriz de confusión — CNN + Augmentation"),
     ("confusion_matrix_transfer_learning.png", "Matriz de confusión — Transfer Learning"),
     ("confusion_matrix_svm_baseline.png", "Matriz de confusión — SVM baseline"),
+    ("classification_report_cnn_base.png", "Classification report — CNN Base"),
+    ("classification_report_cnn_augmentation.png", "Classification report — CNN + Augmentation"),
+    ("classification_report_transfer_learning.png", "Classification report — Transfer Learning"),
+    ("classification_report_svm_baseline.png", "Classification report — SVM baseline"),
     ("curvas_cnn_base.png", "Curvas de entrenamiento — CNN Base"),
     ("curvas_cnn_augmented.png", "Curvas de entrenamiento — CNN + Augmentation"),
     ("curvas_transfer_learning.png", "Curvas de entrenamiento — Transfer Learning"),

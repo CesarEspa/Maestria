@@ -47,7 +47,13 @@ adaptar)*:
   domina en todas las métricas — ver [Resultados](#resultados).
 - ✓ Evaluar con sensibilidad, especificidad, exactitud, AUC-ROC y matriz de
   confusión; contrastar con una línea base de ML clásico (SVM + HOG) y con
-  la literatura. El contraste con la SVM reveló la señal de fuga de datos
+  la literatura. La especificidad por clase (uno-contra-el-resto) se añadió
+  para los 4 modelos — ver la tabla completa en
+  [Resultados](#resultados) y el gráfico
+  `sensibilidad_especificidad.png`, que expone con claridad el colapso de
+  CNN + Augmentation: 100% de especificidad en Benigno/Normal porque nunca
+  las predice, pero 0% en Maligno porque nunca descarta a nadie de esa
+  clase. El contraste con la SVM reveló además la señal de fuga de datos
   más clara del proyecto (100% de exactitud, ver
   [Hallazgo #5](#hallazgos-y-análisis)).
 - ✓ Generar mapas Grad-CAM sobre el mejor modelo y analizar su aplicabilidad
@@ -373,17 +379,27 @@ y [Hallazgo #7](#hallazgos-y-análisis) para el detalle). Se entrenó
 íntegramente en CPU: no había soporte de GPU disponible en la instalación
 de TensorFlow del equipo (ver nota en [Instalación](#instalación)).
 
-| Modelo | Exactitud | AUC-ROC | F1 Macro | Sensib. Benigno | Sensib. Maligno | Sensib. Normal |
-|---|---:|---:|---:|---:|---:|---:|
-| **CNN Base** | **0.8667** | 0.9449 | **0.7490** | 0.44 | 0.99 | 0.83 |
-| CNN + Augmentation | 0.5091 ⚠️ | 0.7233 | 0.2249 | 0.00 | 1.00 | 0.00 |
-| **Transfer Learning (EfficientNetB0)** | 0.7939 | **0.9563** | 0.7330 | **0.83** | 0.86 | 0.70 |
-| SVM (HOG) — Línea base | 1.0000 ⚠️ | 1.0000 ⚠️ | 1.0000 ⚠️ | 1.00 | 1.00 | 1.00 |
+| Modelo | Exactitud | AUC-ROC | F1 Macro | Sensib. Benigno | Sensib. Maligno | Sensib. Normal | Especif. Benigno | Especif. Maligno | Especif. Normal |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| **CNN Base** | **0.8667** | 0.9449 | **0.7490** | 0.44 | 0.99 | 0.83 | 0.92 | 1.00 | 0.90 |
+| CNN + Augmentation | 0.5091 ⚠️ | 0.7233 | 0.2249 | 0.00 | 1.00 | 0.00 | 1.00 | 0.00 ⚠️ | 1.00 |
+| **Transfer Learning (EfficientNetB0)** | 0.7939 | **0.9563** | 0.7330 | **0.83** | 0.86 | 0.70 | 0.83 | 1.00 | 0.91 |
+| SVM (HOG) — Línea base | 1.0000 ⚠️ | 1.0000 ⚠️ | 1.0000 ⚠️ | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
+
+*(Especificidad por clase, uno-contra-el-resto, calculada desde la matriz
+de confusión de cada modelo — objetivo específico 3 de la propuesta del
+TFM. Detalle de la fórmula y figuras dedicadas en
+[Catálogo de figuras](#catálogo-de-figuras-generadas).)*
 
 ⚠️ Los resultados perfectos de la SVM siguen sin ser creíbles (fuga de datos,
 sin cambios — no se retocó ese modelo). La CNN + Augmentation sigue
 colapsando a nivel de predicción final, exactamente igual que en la ronda
-anterior (ver Hallazgos).
+anterior (ver Hallazgos) — y la especificidad lo deja todavía más claro que
+la sensibilidad: al predecir siempre "Maligno", su especificidad en esa
+clase es **0.00** (nunca descarta a nadie de ser Maligno, así que no
+puede servir ni siquiera para "confirmar que alguien NO tiene cáncer"),
+mientras que su 100% de especificidad en Benigno/Normal es un artefacto
+trivial de no predecir jamás esas clases, no una fortaleza real.
 
 **¿Cuál es "el mejor" ahora? Es una decisión más reñida que antes.** Con
 más presupuesto de épocas, la **CNN Base** mejoró en todo (86.67% de
@@ -571,9 +587,35 @@ bajo-medio.
 
 <img src="outputs/figures/tabla_comparativa.png" width="620">
 
-**`tabla_comparativa.png`** — La tabla de [Resultados](#resultados)
-renderizada como imagen, lista para incluir en el documento sin
-recrearla.
+**`tabla_comparativa.png`** — Exactitud, AUC-ROC, F1 macro y sensibilidad
+por clase de los 3 modelos de Keras (la SVM se trata aparte, sin
+retocarla — ver [Limitaciones](#limitaciones-y-consideraciones-éticas)).
+Es la misma información que la mitad izquierda de la tabla de
+[Resultados](#resultados), renderizada como imagen.
+
+<img src="outputs/figures/tabla_comparativa_especificidad.png" width="620">
+
+**`tabla_comparativa_especificidad.png`** — Especificidad por clase
+(uno-contra-el-resto) de los 3 modelos de Keras, calculada desde su
+matriz de confusión: para la clase i, Especificidad = VN/(VN+FP), con
+VN = casos que no son de la clase i y el modelo tampoco predijo como
+tal, y FP = casos de otra clase que el modelo predijo erróneamente
+como i. **Resultado:** CNN Base tiene la especificidad macro más alta
+(0.9401) de los 3 modelos de Keras; CNN + Augmentation tiene la más
+baja (0.6667), arrastrada por su 0.0000 en Maligno.
+
+<img src="outputs/figures/sensibilidad_especificidad.png" width="720">
+
+**`sensibilidad_especificidad.png`** — Gráfico de barras agrupadas:
+sensibilidad y especificidad por clase, para los 4 modelos, en 3
+paneles (uno por clase). **Resultado:** es la figura que expone con
+más claridad el colapso de CNN + Augmentation — en el panel "Benigno"
+su barra de sensibilidad directamente no existe (0.00); en el panel
+"Maligno" es su barra de especificidad la que no existe (0.00). Verlas
+lado a lado dentro del mismo panel deja claro que un modelo puede tener
+sensibilidad o especificidad perfectas por razones triviales (no
+predecir nunca / predecir siempre una clase) y que ninguna de las dos
+métricas por sí sola cuenta la historia completa.
 
 #### Explicabilidad
 
@@ -658,6 +700,15 @@ una reducción del augmentation en sí (se quitó `RandomFlip("vertical")` y
   prácticamente todo el conjunto de test (sensibilidad 1.00 en Maligno,
   0.00 en Benigno y Normal) — el mismo patrón de la primera ronda, solo
   que ahora colapsando hacia la clase mayoritaria en vez de hacia Normal.
+- La **especificidad por clase** (añadida al proyecto para alinearlo con
+  el objetivo específico 3 de la propuesta del TFM, ver
+  [Resultados](#resultados)) hace el colapso todavía más evidente: su
+  especificidad en Maligno es **0.00** — nunca descarta a nadie de ser
+  Maligno, así que ni siquiera sirve para "confirmar ausencia" de esa
+  clase —, mientras que su 100% de especificidad en Benigno y Normal es
+  un artefacto trivial de no predecirlas jamás, no una fortaleza real.
+  Ver `sensibilidad_especificidad.png` para la comparación visual con
+  los otros 3 modelos.
 
 **Lectura de este resultado:** dado que la CNN Base (arquitectura
 idéntica, mismos hiperparámetros, sin augmentation) sí se arregló por

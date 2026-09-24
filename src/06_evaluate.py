@@ -38,6 +38,28 @@ SVM_MODEL_NAME = "SVM (HOG) — Línea Base"
 ROC_COLORS = ["#3498db", "#e67e22", "#2ecc71", "#9b59b6"]
 
 
+def specificity_per_class_from_cm(cm):
+    """
+    Especificidad por clase (uno-contra-el-resto) a partir de una matriz de
+    confusión NxN, según la propuesta 1 del TFM (objetivo específico 3):
+      FP_i = suma de la columna i, excluyendo la diagonal
+      VN_i = celdas que no están ni en la fila i ni en la columna i
+           = total - fila_i - columna_i + cm[i,i]
+      Especificidad_i = VN_i / (VN_i + FP_i)
+    Devuelve un dict {CLASS_LABELS[i]: especificidad}.
+    """
+    n = cm.shape[0]
+    total = cm.sum()
+    out = {}
+    for i in range(n):
+        col_i = cm[:, i].sum()
+        row_i = cm[i, :].sum()
+        fp = col_i - cm[i, i]
+        vn = total - row_i - col_i + cm[i, i]
+        out[CLASS_LABELS[i]] = float(vn / (vn + fp)) if (vn + fp) > 0 else 0.0
+    return out
+
+
 def evaluate_from_proba(y_test, y_proba, model_name):
     """Calcula todas las métricas a partir de las probabilidades ya predichas
     (independiente de si vienen de un modelo Keras o de la SVM)."""
@@ -54,6 +76,7 @@ def evaluate_from_proba(y_test, y_proba, model_name):
         y_test, y_pred, target_names=CLASS_LABELS, output_dict=True
     )
     cm = confusion_matrix(y_test, y_pred)
+    specificity = specificity_per_class_from_cm(cm)
 
     return {
         "name": model_name,
@@ -61,6 +84,8 @@ def evaluate_from_proba(y_test, y_proba, model_name):
         "auc_roc": auc,
         "report": report,
         "confusion_matrix": cm,
+        "specificity_per_class": specificity,
+        "specificity_macro": float(np.mean(list(specificity.values()))),
         "y_pred": y_pred,
         "y_proba": y_proba,
     }
@@ -167,6 +192,88 @@ def plot_comparison_table(results):
     fig.savefig(FIGURES_DIR / "tabla_comparativa.png", dpi=300, bbox_inches="tight")
     plt.close(fig)
     print(f"  → Guardado: {FIGURES_DIR / 'tabla_comparativa.png'}")
+
+
+def plot_specificity_table(results, filename="tabla_comparativa_especificidad.png"):
+    """Tabla comparativa de especificidad por clase (contraparte de
+    plot_comparison_table, separada para no saturar una sola tabla con
+    10 columnas — ver objetivo específico 3 de la propuesta 1 del TFM)."""
+    fig, ax = plt.subplots(figsize=(12, 4))
+    ax.axis("off")
+
+    headers = ["Modelo", "Exactitud",
+               "Especif.\nBenigno", "Especif.\nMaligno", "Especif.\nNormal",
+               "Especif.\nMacro"]
+
+    rows = []
+    for r in results:
+        spec = r["specificity_per_class"]
+        rows.append([
+            r["name"],
+            f"{r['accuracy']:.4f}",
+            f"{spec['Benigno']:.4f}",
+            f"{spec['Maligno']:.4f}",
+            f"{spec['Normal']:.4f}",
+            f"{r['specificity_macro']:.4f}",
+        ])
+
+    table = ax.table(
+        cellText=rows, colLabels=headers,
+        cellLoc="center", loc="center",
+        colColours=["#e67e22"] * len(headers)
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(11)
+    table.scale(1, 1.8)
+
+    for j in range(len(headers)):
+        table[0, j].set_text_props(color="white", fontweight="bold")
+
+    best_idx = np.argmax([r["specificity_macro"] for r in results])
+    for j in range(len(headers)):
+        table[best_idx + 1, j].set_facecolor("#fae5d3")
+
+    fig.suptitle("Comparativa de Especificidad por Clase — Conjunto de Prueba",
+                 fontsize=14, y=0.95)
+    fig.tight_layout()
+    fig.savefig(FIGURES_DIR / filename, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  → Guardado: {FIGURES_DIR / filename}")
+
+
+def plot_sensitivity_specificity_bars(all_results, filename="sensibilidad_especificidad.png"):
+    """
+    Gráfico de barras agrupadas: sensibilidad vs especificidad por clase,
+    para los 4 modelos, en 3 subgráficos (uno por clase) — pedido
+    explícitamente en la propuesta 1 del TFM (objetivo específico 3).
+    """
+    fig, axes = plt.subplots(1, NUM_CLASSES, figsize=(16, 5.5), sharey=True)
+    model_names = [r["name"] for r in all_results]
+    x = np.arange(len(model_names))
+    width = 0.35
+    bar_colors = {"Sensibilidad": "#2e86ab", "Especificidad": "#e67e22"}
+
+    for i, cls in enumerate(CLASS_LABELS):
+        ax = axes[i]
+        sens = [r["report"][cls]["recall"] for r in all_results]
+        spec = [r["specificity_per_class"][cls] for r in all_results]
+        ax.bar(x - width / 2, sens, width, label="Sensibilidad", color=bar_colors["Sensibilidad"])
+        ax.bar(x + width / 2, spec, width, label="Especificidad", color=bar_colors["Especificidad"])
+        ax.set_title(cls, fontsize=13)
+        ax.set_xticks(x)
+        ax.set_xticklabels(model_names, rotation=30, ha="right", fontsize=9)
+        ax.set_ylim(0, 1.05)
+        ax.grid(True, axis="y", alpha=0.3)
+        if i == 0:
+            ax.set_ylabel("Valor")
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", ncol=2, bbox_to_anchor=(0.5, 1.04), fontsize=11)
+    fig.suptitle("Sensibilidad vs. Especificidad por clase — 4 modelos", fontsize=15, y=1.1)
+    fig.tight_layout()
+    fig.savefig(FIGURES_DIR / filename, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  → Guardado: {FIGURES_DIR / filename}")
 
 
 def plot_roc_comparison(roc_entries, filename="curvas_roc_comparativas.png"):
@@ -276,23 +383,47 @@ def main():
     if len(results) >= 2:
         print("\n[3/4] Generando tabla comparativa...")
         plot_comparison_table(results)
+        plot_specificity_table(results)
 
     # ── SVM baseline: SOLO LECTURA, no se reentrena ni se modifica ──────
     # Se incluye aquí únicamente para las curvas ROC comparativas y su
     # classification report como imagen. Sus métricas "oficiales" siguen
-    # siendo las de metricas_svm_baseline.json (08_baseline_ml.py).
+    # siendo las de metricas_svm_baseline.json (08_baseline_ml.py); esta
+    # evaluación de solo lectura SÍ se usa para AÑADIRLE la especificidad
+    # a ese JSON ya existente, sin volver a entrenar el modelo (objetivo
+    # específico 3 de la propuesta 1 del TFM).
     print("\n[4/4] Cargando SVM baseline (solo lectura, sin reentrenar)...")
     svm_proba = load_svm_probabilities(X_test)
     svm_result = None
     if svm_proba is not None:
         svm_result = evaluate_from_proba(y_test, svm_proba, SVM_MODEL_NAME)
         print(f"  Accuracy: {svm_result['accuracy']:.4f} (ya reportado en "
-              f"metricas_svm_baseline.json; no se sobreescribe)")
+              f"metricas_svm_baseline.json; no se sobreescribe salvo la especificidad)")
         plot_classification_report_image(
             svm_result["report"], SVM_MODEL_NAME, "classification_report_svm_baseline.png"
         )
+
+        # Parchear metricas_svm_baseline.json con la especificidad, SIN
+        # reentrenar el SVM ni tocar ninguno de sus campos existentes.
+        svm_json_path = FIGURES_DIR / "metricas_svm_baseline.json"
+        if svm_json_path.exists():
+            with open(svm_json_path, "r", encoding="utf-8") as f:
+                svm_metrics = json.load(f)
+            svm_metrics["specificity_per_class"] = svm_result["specificity_per_class"]
+            svm_metrics["specificity_macro"] = svm_result["specificity_macro"]
+            with open(svm_json_path, "w", encoding="utf-8") as f:
+                json.dump(svm_metrics, f, indent=2)
+            print(f"  → Especificidad añadida a: {svm_json_path} (sin reentrenar)")
     else:
         print("  ⚠ No se encontró outputs/models/svm_baseline.joblib, se omite del ROC comparativo.")
+
+    # ── Sensibilidad vs. especificidad, los 4 modelos (bar chart agrupado) ──
+    all_four = list(results)
+    if svm_result is not None:
+        all_four.append(svm_result)
+    if len(all_four) >= 2:
+        print("\n  Generando gráfico de sensibilidad vs. especificidad (4 modelos)...")
+        plot_sensitivity_specificity_bars(all_four)
 
     # ── Curvas ROC comparativas (los modelos Keras + SVM si está disponible) ──
     print("\n  Generando curvas ROC comparativas...")
@@ -317,7 +448,9 @@ def main():
             "f1_macro": r["report"]["macro avg"]["f1-score"],
             "sensitivity_per_class": {
                 cls: r["report"][cls]["recall"] for cls in CLASS_LABELS
-            }
+            },
+            "specificity_per_class": r["specificity_per_class"],
+            "specificity_macro": r["specificity_macro"],
         })
     with open(FIGURES_DIR / "metricas_comparativas.json", "w") as f:
         json.dump(metrics_json, f, indent=2)

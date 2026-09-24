@@ -506,16 +506,93 @@ visual; y su propio mecanismo de refresco (recargar toda la página
 cada 3 s con st.rerun()) era más disruptivo que el de la app FastAPI
 (que solo actualiza las partes que cambian).
 
+FASE 10 — Alinear el proyecto con la Propuesta 1 oficial del TFM (Tarea 1: especificidad)
+----------------------------------------------------------------------
+El usuario comparó el proyecto con el documento oficial de propuestas
+de temas del máster y detectó tres huecos frente a lo que promete la
+"Propuesta 1": (a) el objetivo específico 3 pide explícitamente
+comparar sensibilidad Y especificidad, y el proyecto solo reportaba
+sensibilidad; (b) el objetivo específico 1 pide segmentación, que no
+existía; (c) el resumen de la propuesta menciona "aumento de datos
+avanzado, como el intercambio de píxeles" (CutMix/Mixup), y el
+proyecto solo usa aumento estándar (flip/rotación/zoom/contraste).
+Pidió cerrar los tres huecos en orden estricto de prioridad,
+deteniéndose a mostrar resultados entre cada tarea. Esta fase cubre
+solo la TAREA 1 (especificidad) — prioritaria porque el objetivo la
+nombra literalmente y es la más rápida de resolver sin reentrenar nada.
+
+Implementación (src/06_evaluate.py y src/08_baseline_ml.py):
+  - specificity_per_class_from_cm(cm): especificidad uno-contra-el-resto
+    por clase desde la matriz de confusión. Para la clase i:
+    FP_i = suma de la columna i excluyendo la diagonal; VN_i = total -
+    fila_i - columna_i + cm[i,i]; Especificidad_i = VN_i/(VN_i+FP_i).
+    Verificado a mano contra CNN Base/Benigno: VN=135, FP=12,
+    135/147=0.9184, coincide exacto con lo que calculó el script.
+  - Se añadió specificity_per_class y specificity_macro a
+    metricas_comparativas.json (los 3 modelos Keras) y, VÍA UN PARCHE
+    DE SOLO LECTURA (sin volver a llamar a svm.fit()), a
+    metricas_svm_baseline.json — 06_evaluate.py ya cargaba la SVM en
+    modo lectura para las curvas ROC comparativas, así que se
+    reutilizó esa misma carga para calcular su especificidad y
+    reescribir el JSON solo con los 2 campos nuevos, sin tocar nada
+    más del archivo ni reentrenar el modelo.
+  - 08_baseline_ml.py también se actualizó con la misma función (para
+    que un reentrenamiento LEGÍTIMO futuro de la SVM ya la incluya de
+    fábrica), pero ese script NO SE EJECUTÓ en esta fase — se respetó
+    al pie de la letra la instrucción de no reentrenar la SVM.
+  - Nueva figura tabla_comparativa_especificidad.png: misma estética
+    que tabla_comparativa.png (naranja en vez de azul, para
+    diferenciarla a simple vista), con Especif. Benigno/Maligno/Normal
+    y Especif. Macro, para los 3 modelos de Keras.
+  - Nueva figura sensibilidad_especificidad.png: gráfico de barras
+    agrupadas, 3 paneles (uno por clase), sensibilidad vs especificidad
+    para los 4 modelos. Es la figura que expone con más claridad el
+    colapso de CNN + Augmentation (ver más abajo).
+  - tabla_comparativa.png y confusion_matrix_*.png se regeneraron sin
+    cambios de contenido (mismo resultado, ya que 06_evaluate.py es
+    puramente de inferencia — se confirmó con "git status
+    outputs/models/" que ningún .keras/.joblib cambió un solo byte).
+
+RESULTADO — especificidad macro por modelo: CNN Base 0.9401, CNN +
+Augmentation 0.6667 (la más baja), Transfer Learning 0.9139, SVM 1.0000.
+El hallazgo más informativo es el de CNN + Augmentation: especificidad
+1.00 en Benigno y en Normal, pero 0.00 en Maligno. Como el modelo
+predice "Maligno" para prácticamente todo el conjunto de test, nunca
+tiene falsos positivos en las otras dos clases (nunca las predice, así
+que su especificidad ahí es perfecta por una razón trivial, no por
+mérito real) y, en cambio, jamás descarta correctamente a nadie de ser
+Maligno (especificidad 0 = no sirve ni para "confirmar ausencia" de esa
+clase). Esto refuerza con una métrica adicional, independiente de la
+sensibilidad, la misma conclusión de la sección 4.2/Hallazgo 3: el
+colapso es real y no es un artefacto de cómo se mide.
+
+Tabla completa (sensibilidad y especificidad, los 4 modelos — la que
+pidió el usuario ver antes de continuar a la Tarea 2):
+
+Modelo                Exactitud  AUC-ROC  F1 Macro  Sens.Ben  Sens.Mal  Sens.Nor  Espec.Ben  Espec.Mal  Espec.Nor  Espec.Macro
+CNN Base                0.8667    0.9449    0.7490    0.4444    0.9881    0.8254    0.9184     1.0000     0.9020     0.9401
+CNN + Augmentation      0.5091    0.7233    0.2249    0.0000    1.0000    0.0000    1.0000     0.0000     1.0000     0.6667
+Transfer Learning       0.7939    0.9563    0.7330    0.8333    0.8571    0.6984    0.8299     1.0000     0.9118     0.9139
+SVM (HOG) línea base    1.0000    1.0000    1.0000    1.0000    1.0000    1.0000    1.0000     1.0000     1.0000     1.0000
+
+Commit y push de esta tarea hechos por separado, antes de continuar a
+la Tarea 2 (segmentación), tal como pidió el usuario.
+
 ESTADO ACTUAL: los 4 modelos están entrenados y evaluados con los
-presupuestos de épocas de la Fase 8; queda UNA sola app web (FastAPI +
-frontend propio en src/frontend/), con todas las mejoras de las Fases
-6, 8 y 9 (épocas configurables con límite visible, entrenar todos, log
+presupuestos de épocas de la Fase 8, y ahora también con especificidad
+por clase (Fase 10, Tarea 1) — completa el objetivo específico 3 de la
+propuesta oficial del TFM. Queda UNA sola app web (FastAPI + frontend
+propio en src/frontend/), con todas las mejoras de las Fases 6, 8 y 9
+(épocas configurables con límite visible, entrenar todos, log
 persistente, botón Detener corregido, rediseño minimalista) y probada
 de extremo a extremo con automatización real de navegador
 (Playwright/Chromium headless), no solo pruebas manuales. La
 instalación es un único "pip install -r requirements.txt", sin
-conflicto de protobuf. El proyecto está subido a GitHub:
-https://github.com/CesarEspa/Maestria
+conflicto de protobuf. Pendientes de la Propuesta 1: Tarea 2
+(segmentación pulmonar clásica + reentrenar transfer learning sobre
+datos segmentados) y Tarea 3 (CutMix/Mixup), ambas detenidas a la
+espera de confirmación del usuario para continuar. El proyecto está
+subido a GitHub: https://github.com/CesarEspa/Maestria
 
 
 ====================================================================
@@ -719,13 +796,20 @@ CNN". La comparación correcta, imposible de hacer con los datos
 disponibles, requeriría un split a nivel de paciente.
 
 --------------------------------------------------------------------
-4.5 Tabla resumen (resultados FINALES, tercera ronda — Fase 8)
+4.5 Tabla resumen (resultados FINALES, tercera ronda — Fase 8; especificidad añadida en la Fase 10)
 --------------------------------------------------------------------
 Modelo                     Exactitud  AUC-ROC  F1 Macro  Sens.Benigno Sens.Maligno Sens.Normal
 CNN Base (arreglada)         0.8667    0.9449   0.7490    0.44         0.99         0.83
 CNN + Augmentation (colapsa) 0.5091    0.7233   0.2249    0.00         1.00         0.00   <- idéntica a la 2da ronda
 Transfer Learning (EffNet)   0.7939    0.9563   0.7330    0.83         0.86         0.70   <- bajó vs 2da ronda, recomendado igual
 SVM (HOG) linea base         1.0000    1.0000   1.0000    1.00         1.00         1.00   <- sospechoso de leakage, sin cambios
+
+Especificidad por clase (uno-contra-el-resto, ver Fase 10 para la fórmula):
+Modelo                     Espec.Benigno  Espec.Maligno  Espec.Normal  Espec.Macro
+CNN Base                     0.9184         1.0000         0.9020        0.9401
+CNN + Augmentation            1.0000         0.0000         1.0000        0.6667   <- 0.00 en Maligno: nunca descarta a nadie de esa clase
+Transfer Learning             0.8299         1.0000         0.9118        0.9139
+SVM (HOG) linea base          1.0000         1.0000         1.0000        1.0000
 
 Comparación con la segunda ronda (techo de épocas 80/50, sección 4 de
 versiones anteriores de este documento):
@@ -1140,12 +1224,19 @@ OBJETIVOS ESPECÍFICOS Y SU CUMPLIMIENTO
      CUMPLIDO. Los cuatro modelos (los tres de Keras más la línea base
      SVM) se evaluaron sobre el mismo conjunto de prueba (165 imágenes
      nunca vistas durante el entrenamiento) con exactitud, AUC-ROC
-     macro-average (one-vs-rest), F1 macro, sensibilidad por clase y
+     macro-average (one-vs-rest), F1 macro, sensibilidad Y
+     especificidad por clase (uno-contra-el-resto, añadida en la
+     Fase 10 para cubrir literalmente lo que pide este objetivo) y
      matriz de confusión completa, además de un informe de
-     clasificación (precision/recall/f1/support) por modelo. El
-     contraste con la línea base SVM+HOG resultó, en sí mismo, uno de
-     los hallazgos metodológicos más importantes del trabajo: su
-     resultado perfecto (100% en las tres métricas principales) no se
+     clasificación (precision/recall/f1/support) por modelo. La
+     especificidad resultó ser la métrica que más claramente expone el
+     colapso de CNN + Augmentation: 0.00 en Maligno (nunca descarta a
+     nadie de esa clase) frente a un engañoso 1.00 en Benigno/Normal
+     (trivial, por no predecirlas jamás) — ver sección 9.4 y la figura
+     sensibilidad_especificidad.png. El contraste con la línea base
+     SVM+HOG resultó, en sí mismo, uno de los hallazgos metodológicos
+     más importantes del trabajo: su resultado perfecto (100% en las
+     cinco métricas principales, incluida ahora la especificidad) no se
      interpretó como un éxito, sino como la evidencia empírica más
      clara de la limitación de fuga de datos del dataset (sección
      9.6 y Limitaciones) — un ejemplo concreto de por qué la
@@ -1267,6 +1358,15 @@ CNN Base                  0.8667    0.9449    0.7490      0.4444        0.9881  
 CNN + Augmentation        0.5091    0.7233    0.2249      0.0000        1.0000       0.0000
 Transfer Learning         0.7939    0.9563    0.7330      0.8333        0.8571       0.6984
 SVM (HOG) — línea base    1.0000    1.0000    1.0000      1.0000        1.0000       1.0000
+
+Especificidad por clase (uno-contra-el-resto, añadida en la Fase 10
+para cubrir el objetivo específico 3 de la propuesta del TFM):
+
+Modelo                  Espec.Benigno  Espec.Maligno  Espec.Normal  Espec.Macro
+CNN Base                   0.9184         1.0000         0.9020        0.9401
+CNN + Augmentation          1.0000         0.0000         1.0000        0.6667
+Transfer Learning           0.8299         1.0000         0.9118        0.9139
+SVM (HOG) — línea base      1.0000         1.0000         1.0000        1.0000
 
 (Fuente: outputs/figures/metricas_comparativas.json y
 metricas_svm_baseline.json, generados por 06_evaluate.py y
@@ -1451,9 +1551,28 @@ COMPARACIÓN ENTRE MODELOS (generadas por 06_evaluate.py)
     aproxima mucho más a la diagonal aleatoria en la zona de FPR
     bajo-medio.
 
-  - tabla_comparativa.png: la misma tabla de métricas de la sección
-    9.4, renderizada como imagen para incluir directamente en el
-    documento sin tener que recrear la tabla.
+  - tabla_comparativa.png: exactitud/AUC-ROC/F1/sensibilidad de los 3
+    modelos de Keras (mitad de la tabla de la sección 9.4), renderizada
+    como imagen para incluir directamente en el documento sin tener que
+    recrear la tabla.
+
+  - tabla_comparativa_especificidad.png (Fase 10): igual que la
+    anterior pero con especificidad por clase en vez de sensibilidad,
+    de los 3 modelos de Keras (paleta naranja, para distinguirla a
+    simple vista de la de sensibilidad). Se separó en una figura propia
+    en vez de añadir columnas a tabla_comparativa.png porque 10
+    columnas en una sola tabla-imagen dejaban de leerse bien.
+
+  - sensibilidad_especificidad.png (Fase 10): gráfico de barras
+    agrupadas, 3 paneles (uno por clase: Benigno/Maligno/Normal), con
+    sensibilidad y especificidad lado a lado para los 4 modelos. Es la
+    figura más reveladora del colapso de CNN + Augmentation: en el
+    panel Benigno su barra de sensibilidad no existe (0.00); en el
+    panel Maligno es su barra de especificidad la que no existe
+    (0.00) — verlas juntas deja claro que ninguna de las dos métricas
+    por separado cuenta la historia completa, y que un modelo puede
+    lograr una "perfecta" en una clase por la razón trivial de no
+    predecirla (o predecirla) nunca.
 
 EXPLICABILIDAD (generada por 07_gradcam.py)
 

@@ -7,5 +7,11 @@
     "Benigno": 1.0,
     "Maligno": 1.0,
     "Normal": 1.0
-  }
+  },
+  "specificity_per_class": {
+    "Benigno": 1.0,
+    "Maligno": 1.0,
+    "Normal": 1.0
+  },
+  "specificity_macro": 1.0
 }

@@ -44,6 +44,22 @@ def extract_hog_features(images):
     return np.array(features)
 
 
+def specificity_per_class_from_cm(cm):
+    """Especificidad por clase (uno-contra-el-resto) desde la matriz de
+    confusión — misma fórmula que 06_evaluate.py (objetivo específico 3 de
+    la propuesta 1 del TFM): Especificidad_i = VN_i / (VN_i + FP_i)."""
+    n = cm.shape[0]
+    total = cm.sum()
+    out = {}
+    for i in range(n):
+        col_i = cm[:, i].sum()
+        row_i = cm[i, :].sum()
+        fp = col_i - cm[i, i]
+        vn = total - row_i - col_i + cm[i, i]
+        out[CLASS_LABELS[i]] = float(vn / (vn + fp)) if (vn + fp) > 0 else 0.0
+    return out
+
+
 def plot_confusion_matrix(cm, filename):
     """Matriz de confusión del SVM."""
     fig, ax = plt.subplots(figsize=(7, 6))
@@ -117,6 +133,7 @@ def main():
 
         # Guardar métricas
         report = classification_report(y_test, y_pred, target_names=CLASS_LABELS, output_dict=True)
+        specificity = specificity_per_class_from_cm(cm)
         metrics = {
             "name": "SVM (HOG) — Línea Base",
             "accuracy": acc,
@@ -124,7 +141,9 @@ def main():
             "f1_macro": report["macro avg"]["f1-score"],
             "sensitivity_per_class": {
                 cls: report[cls]["recall"] for cls in CLASS_LABELS
-            }
+            },
+            "specificity_per_class": specificity,
+            "specificity_macro": float(np.mean(list(specificity.values()))),
         }
         with open(FIGURES_DIR / "metricas_svm_baseline.json", "w") as f:
             json.dump(metrics, f, indent=2)

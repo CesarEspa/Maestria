@@ -8,7 +8,13 @@
       "Benigno": 0.4444444444444444,
       "Maligno": 0.9880952380952381,
       "Normal": 0.8253968253968254
-    }
+    },
+    "specificity_per_class": {
+      "Benigno": 0.9183673469387755,
+      "Maligno": 1.0,
+      "Normal": 0.9019607843137255
+    },
+    "specificity_macro": 0.940109377084167
   },
   {
     "name": "CNN + Augmentation",
@@ -19,7 +25,13 @@
       "Benigno": 0.0,
       "Maligno": 1.0,
       "Normal": 0.0
-    }
+    },
+    "specificity_per_class": {
+      "Benigno": 1.0,
+      "Maligno": 0.0,
+      "Normal": 1.0
+    },
+    "specificity_macro": 0.6666666666666666
   },
   {
     "name": "Transfer Learning",
@@ -30,6 +42,12 @@
       "Benigno": 0.8333333333333334,
       "Maligno": 0.8571428571428571,
       "Normal": 0.6984126984126984
-    }
+    },
+    "specificity_per_class": {
+      "Benigno": 0.8299319727891157,
+      "Maligno": 1.0,
+      "Normal": 0.9117647058823529
+    },
+    "specificity_macro": 0.9138988928904895
   }
 ]
