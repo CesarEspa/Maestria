@@ -9,19 +9,23 @@ from config import FIGURES_DIR, GRADCAM_DIR
 FIGURE_SPECS = [
     ("tabla_comparativa.png", "Tabla comparativa — sensibilidad"),
     ("tabla_comparativa_especificidad.png", "Tabla comparativa — especificidad"),
-    ("sensibilidad_especificidad.png", "Sensibilidad vs. especificidad — 4 modelos"),
-    ("curvas_roc_comparativas.png", "Curvas ROC comparativas — 4 modelos"),
+    ("sensibilidad_especificidad.png", "Sensibilidad vs. especificidad — todos los modelos"),
+    ("curvas_roc_comparativas.png", "Curvas ROC comparativas — todos los modelos"),
+    ("ejemplos_segmentacion.png", "Segmentación pulmonar — ejemplos por clase"),
     ("confusion_matrix_cnn_base.png", "Matriz de confusión — CNN Base"),
     ("confusion_matrix_cnn_augmentation.png", "Matriz de confusión — CNN + Augmentation"),
     ("confusion_matrix_transfer_learning.png", "Matriz de confusión — Transfer Learning"),
+    ("confusion_matrix_transfer_learning_segmentacion.png", "Matriz de confusión — Transfer Learning + Segmentación"),
     ("confusion_matrix_svm_baseline.png", "Matriz de confusión — SVM baseline"),
     ("classification_report_cnn_base.png", "Classification report — CNN Base"),
     ("classification_report_cnn_augmentation.png", "Classification report — CNN + Augmentation"),
     ("classification_report_transfer_learning.png", "Classification report — Transfer Learning"),
+    ("classification_report_transfer_learning_segmentacion.png", "Classification report — Transfer Learning + Segmentación"),
     ("classification_report_svm_baseline.png", "Classification report — SVM baseline"),
     ("curvas_cnn_base.png", "Curvas de entrenamiento — CNN Base"),
     ("curvas_cnn_augmented.png", "Curvas de entrenamiento — CNN + Augmentation"),
     ("curvas_transfer_learning.png", "Curvas de entrenamiento — Transfer Learning"),
+    ("curvas_transfer_learning_segmentado.png", "Curvas de entrenamiento — Transfer Learning + Segmentación"),
 ]
 
 LEAKAGE_WARNING = (
@@ -35,9 +39,10 @@ LEAKAGE_WARNING = (
 
 def load_all_metrics():
     """
-    Devuelve la lista combinada de métricas de los 4 modelos (3 redes Keras
-    + SVM baseline), leyendo los JSON que generan 06_evaluate.py y
-    08_baseline_ml.py. Modelos aún no evaluados simplemente no aparecen.
+    Devuelve la lista combinada de métricas de todos los modelos evaluados
+    (redes Keras + SVM baseline), leyendo los JSON que generan
+    06_evaluate.py y 08_baseline_ml.py. Modelos aún no evaluados
+    simplemente no aparecen.
     """
     metrics = []
 

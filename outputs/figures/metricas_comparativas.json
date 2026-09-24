@@ -49,5 +49,22 @@
       "Normal": 0.9117647058823529
     },
     "specificity_macro": 0.9138988928904895
+  },
+  {
+    "name": "Transfer Learning + Segmentaci\u00f3n",
+    "accuracy": 0.7878787878787878,
+    "auc_roc": 0.9117902304954905,
+    "f1_macro": 0.696797237413484,
+    "sensitivity_per_class": {
+      "Benigno": 0.5555555555555556,
+      "Maligno": 0.8928571428571429,
+      "Normal": 0.7142857142857143
+    },
+    "specificity_per_class": {
+      "Benigno": 0.8571428571428571,
+      "Maligno": 0.9629629629629629,
+      "Normal": 0.8921568627450981
+    },
+    "specificity_macro": 0.904087560950306
   }
 ]

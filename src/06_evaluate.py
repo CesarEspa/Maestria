@@ -1,5 +1,5 @@
 """
-06 - Evaluación Comparativa de los 4 modelos en el conjunto de TEST
+06 - Evaluación Comparativa de los modelos en el conjunto de TEST
 Genera matrices de confusión, métricas por clase, tabla comparativa,
 curvas ROC superpuestas y reportes de clasificación como imagen.
 
@@ -35,7 +35,7 @@ MODEL_SPECS = [
     ("Transfer Learning", "transfer_efficientnet.keras"),
 ]
 SVM_MODEL_NAME = "SVM (HOG) — Línea Base"
-ROC_COLORS = ["#3498db", "#e67e22", "#2ecc71", "#9b59b6"]
+ROC_COLORS = ["#3498db", "#e67e22", "#2ecc71", "#9b59b6", "#1abc9c"]
 
 
 def specificity_per_class_from_cm(cm):
@@ -244,10 +244,10 @@ def plot_specificity_table(results, filename="tabla_comparativa_especificidad.pn
 def plot_sensitivity_specificity_bars(all_results, filename="sensibilidad_especificidad.png"):
     """
     Gráfico de barras agrupadas: sensibilidad vs especificidad por clase,
-    para los 4 modelos, en 3 subgráficos (uno por clase) — pedido
-    explícitamente en la propuesta 1 del TFM (objetivo específico 3).
+    para todos los modelos disponibles, en 3 subgráficos (uno por clase) —
+    pedido explícitamente en la propuesta 1 del TFM (objetivo específico 3).
     """
-    fig, axes = plt.subplots(1, NUM_CLASSES, figsize=(16, 5.5), sharey=True)
+    fig, axes = plt.subplots(1, NUM_CLASSES, figsize=(16 + 1.5 * max(0, len(all_results) - 4), 5.5), sharey=True)
     model_names = [r["name"] for r in all_results]
     x = np.arange(len(model_names))
     width = 0.35
@@ -269,7 +269,7 @@ def plot_sensitivity_specificity_bars(all_results, filename="sensibilidad_especi
 
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="upper center", ncol=2, bbox_to_anchor=(0.5, 1.04), fontsize=11)
-    fig.suptitle("Sensibilidad vs. Especificidad por clase — 4 modelos", fontsize=15, y=1.1)
+    fig.suptitle(f"Sensibilidad vs. Especificidad por clase — {len(all_results)} modelos", fontsize=15, y=1.1)
     fig.tight_layout()
     fig.savefig(FIGURES_DIR / filename, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -302,6 +302,18 @@ def plot_roc_comparison(roc_entries, filename="curvas_roc_comparativas.png"):
     fig.savefig(FIGURES_DIR / filename, dpi=300)
     plt.close(fig)
     print(f"  → Guardado: {FIGURES_DIR / filename}")
+
+
+def safe_filename(model_name):
+    """Nombre de archivo seguro (sin espacios/acentos/símbolos) a partir del
+    nombre de un modelo, para los PNG de matriz de confusión/report."""
+    import unicodedata
+    normalized = unicodedata.normalize("NFKD", model_name)
+    ascii_only = normalized.encode("ascii", "ignore").decode("ascii")
+    safe = ascii_only.lower().replace("+", "").replace(" ", "_")
+    while "__" in safe:
+        safe = safe.replace("__", "_")
+    return safe.strip("_")
 
 
 def plot_classification_report_image(report, model_name, filename):
@@ -371,14 +383,47 @@ def main():
         print(classification_report(y_test, result["y_pred"], target_names=CLASS_LABELS))
 
         # Confusion matrix
-        safe_name = model_name.lower().replace("+", "").replace(" ", "_")
-        while "__" in safe_name:
-            safe_name = safe_name.replace("__", "_")
+        safe_name = safe_filename(model_name)
         plot_confusion_matrix(result["confusion_matrix"], model_name,
                               f"confusion_matrix_{safe_name}.png")
         plot_classification_report_image(
             result["report"], model_name, f"classification_report_{safe_name}.png"
         )
+
+    # ── Quinto modelo: Transfer Learning + Segmentación (Fase 10, Tarea 2) ──
+    # Entrenado por 05b_train_transfer_segmented.py sobre
+    # dataset_splits_segmented.npz; se evalúa aquí sobre el TEST SEGMENTADO
+    # (no el original) porque el modelo espera esa distribución de entrada
+    # — comparar contra el test sin segmentar no sería una comparación
+    # válida. Las etiquetas y el orden son idénticos al split original
+    # (verificado: np.array_equal en las 3 particiones), así que el resto
+    # del pipeline (ROC, tablas) puede tratarlo exactamente igual que a los
+    # demás sin ningún caso especial.
+    seg_model_path = MODELS_DIR / "transfer_efficientnet_segmented.keras"
+    seg_data_path = SPLITS_DIR / "dataset_splits_segmented.npz"
+    SEG_MODEL_NAME = "Transfer Learning + Segmentación"
+    if seg_model_path.exists() and seg_data_path.exists():
+        print(f"\n  ── {SEG_MODEL_NAME} ──")
+        seg_data = np.load(seg_data_path)
+        X_test_seg, y_test_seg = seg_data["X_test"], seg_data["y_test"]
+        seg_model = keras.models.load_model(seg_model_path)
+        seg_result = evaluate_model(seg_model, X_test_seg, y_test_seg, SEG_MODEL_NAME)
+        results.append(seg_result)
+
+        print(f"  Accuracy: {seg_result['accuracy']:.4f}")
+        print(f"  AUC-ROC:  {seg_result['auc_roc']:.4f}" if seg_result["auc_roc"] else "  AUC-ROC: N/A")
+        print(classification_report(y_test_seg, seg_result["y_pred"], target_names=CLASS_LABELS))
+
+        safe_name = safe_filename(SEG_MODEL_NAME)
+        plot_confusion_matrix(seg_result["confusion_matrix"], SEG_MODEL_NAME,
+                              f"confusion_matrix_{safe_name}.png")
+        plot_classification_report_image(
+            seg_result["report"], SEG_MODEL_NAME, f"classification_report_{safe_name}.png"
+        )
+    else:
+        print("\n  ⚠ No se encontró transfer_efficientnet_segmented.keras o "
+              "dataset_splits_segmented.npz — se omite el 5º modelo (ejecutar "
+              "02b_segmentation.py y 05b_train_transfer_segmented.py primero).")
 
     if len(results) >= 2:
         print("\n[3/4] Generando tabla comparativa...")
@@ -417,13 +462,13 @@ def main():
     else:
         print("  ⚠ No se encontró outputs/models/svm_baseline.joblib, se omite del ROC comparativo.")
 
-    # ── Sensibilidad vs. especificidad, los 4 modelos (bar chart agrupado) ──
-    all_four = list(results)
+    # ── Sensibilidad vs. especificidad, todos los modelos (bar chart agrupado) ──
+    all_models = list(results)
     if svm_result is not None:
-        all_four.append(svm_result)
-    if len(all_four) >= 2:
-        print("\n  Generando gráfico de sensibilidad vs. especificidad (4 modelos)...")
-        plot_sensitivity_specificity_bars(all_four)
+        all_models.append(svm_result)
+    if len(all_models) >= 2:
+        print(f"\n  Generando gráfico de sensibilidad vs. especificidad ({len(all_models)} modelos)...")
+        plot_sensitivity_specificity_bars(all_models)
 
     # ── Curvas ROC comparativas (los modelos Keras + SVM si está disponible) ──
     print("\n  Generando curvas ROC comparativas...")

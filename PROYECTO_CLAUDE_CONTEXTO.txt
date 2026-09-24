@@ -578,10 +578,131 @@ SVM (HOG) línea base    1.0000    1.0000    1.0000    1.0000    1.0000    1.000
 Commit y push de esta tarea hechos por separado, antes de continuar a
 la Tarea 2 (segmentación), tal como pidió el usuario.
 
-ESTADO ACTUAL: los 4 modelos están entrenados y evaluados con los
-presupuestos de épocas de la Fase 8, y ahora también con especificidad
-por clase (Fase 10, Tarea 1) — completa el objetivo específico 3 de la
-propuesta oficial del TFM. Queda UNA sola app web (FastAPI + frontend
+TAREA 2 (Fase 10) — Segmentación pulmonar clásica
+----------------------------------------------------------------------
+El objetivo específico 1 de la propuesta oficial pide "implementar
+técnicas de segmentación" en el preprocesamiento; el proyecto no la
+tenía. Se implementó una segmentación clásica (sin deep learning: no
+había tiempo ni datos anotados para entrenar una U-Net) y se
+reentrenó SOLO Transfer Learning sobre esos datos, tal como se pidió.
+
+ALGORITMO (src/02b_segmentation.py), en el orden en que realmente
+funcionó (no en el orden en que se intentó por primera vez):
+  1. Escala de grises + umbral de Otsu (no HU: son JPG exportados, no
+     DICOM crudo, así que no se asumió ningún rango Hounsfield).
+  2. Silueta corporal = el componente CLARO (brillante) más grande de
+     la imagen + cierre morfológico + relleno de huecos → una región
+     corporal sólida.
+  3. Candidatos a pulmón = píxeles OSCUROS que caen DENTRO de esa
+     silueta corporal (no solo "oscuros y no tocan el borde", que fue
+     el primer intento — ver el bug real más abajo).
+  4. Apertura + cierre + descartar componentes diminutos; quedarse con
+     los 2 componentes conexos más grandes = los dos pulmones.
+  5. Cierre final más agresivo (disco de radio 9) + relleno de huecos,
+     para no amputar masas brillantes que tocan el borde del pulmón.
+
+BUG REAL ENCONTRADO Y CORREGIDO DURANTE LA VALIDACIÓN (exactamente el
+tipo de fallo que el usuario pidió vigilar explícitamente: "si la
+segmentación... deja pasar la mesa del escáner, ajusta los
+parámetros"): la primera versión del algoritmo (sin restringir a la
+silueta corporal, solo "oscuro + no toca el borde + top-2 por área")
+dejaba pasar la mesa del escáner en imágenes donde el corte pulmonar
+es pequeño (cerca del ápice o la base del pulmón): el hueco oscuro
+bajo el arco de la mesa no toca el borde de la imagen y a veces es
+más grande que los propios pulmones en esas rebanadas, así que ganaba
+la selección "top-2 por área". Se encontró revisando visualmente 6
+ejemplos (imagen de train #1 fue el caso que falló: la máscara
+incluía la curva completa de la mesa). Se corrigió restringiendo los
+candidatos al interior de la silueta corporal (paso 2-3 arriba), lo
+que excluye estructuralmente cualquier cosa fuera del cuerpo, sin
+importar su tamaño. Verificado que el fix funciona en la MISMA imagen
+que había fallado, más 9 ejemplos adicionales (3 por clase) y,
+después, 150 imágenes aleatorias del set de entrenamiento con
+verificación estadística automática (fracción de área de la máscara:
+mínimo 3.5%, sin máscaras vacías; un único caso con área alta, 44%,
+resultó ser una rebanada pulmonar genuinamente grande al inspeccionarla,
+no un fallo). Solo después de esta doble validación (visual +
+estadística) se procesó el dataset completo (1097 imágenes).
+
+Se guardó como outputs/splits/dataset_splits_segmented.npz, DERIVADO
+DIRECTAMENTE de dataset_splits.npz (mismos X ya cargados, solo se les
+aplica segment_lungs() y se guardan con las MISMAS y_train/y_val/y_test)
+— no se rehizo el split, así que las particiones y etiquetas son
+IDÉNTICAS por construcción, verificado con np.array_equal en las 3
+particiones (True en las 3).
+
+REENTRENAMIENTO (src/05b_train_transfer_segmented.py): arquitectura e
+hiperparámetros IDÉNTICOS a 05_train_transfer.py (mismo LR, mismas 50
+capas descongeladas, mismo presupuesto de épocas 25+100), cambiando
+solo la fuente de datos (dataset_splits_segmented.npz) y el nombre del
+modelo guardado (transfer_efficientnet_segmented.keras, NO sobreescribe
+el original). Entrenamiento estable, sin señales de colapso: val_loss
+0.5914, val_accuracy 0.7636 al final.
+
+EVALUACIÓN (06_evaluate.py extendido con un 5º modelo): se evaluó
+sobre el TEST SEGMENTADO (no el original), porque el modelo espera esa
+distribución de entrada — comparar contra el test sin segmentar no
+sería válido. Resultado, comparado con Transfer Learning original:
+
+Métrica              Original  Segmentado  Cambio
+Exactitud             0.7939    0.7879     casi igual (-0.006)
+AUC-ROC                0.9563    0.9118     BAJÓ
+F1 Macro                0.7330    0.6968     BAJÓ
+Sens. Benigno            0.8333    0.5556     BAJÓ MUCHO (la mejora estrella del original)
+Sens. Maligno             0.8571    0.8929     subió
+Sens. Normal               0.6984    0.7143     subió levemente
+Espec. Benigno              0.8299    0.8571     subió
+Espec. Maligno                1.0000    0.9630     bajó
+Espec. Normal                  0.9118    0.8922     bajó
+
+CONCLUSIÓN: la segmentación NO mejoró el modelo. La exactitud se
+mantiene casi igual, pero el AUC-ROC y el F1 macro bajan, y sobre todo
+se pierde gran parte de la ganancia en sensibilidad de Benigno que
+era el resultado más valioso del modelo original (0.83 → 0.56).
+Hipótesis: eliminar el fondo y la mesa del escáner también elimina
+contexto que la red aprovechaba de forma implícita (posición/forma del
+cuerpo, caja torácica), y la segmentación clásica —imperfecta— añade
+su propio ruido (bordes irregulares, recorte parcial de masas grandes
+que tocan el borde pulmonar, visible en ejemplos_segmentacion.png).
+
+GRAD-CAM (src/07b_gradcam_segmentado.py) — LA PREGUNTA CONCRETA DEL
+USUARIO: "¿desaparece el artefacto de la esquina saturada al eliminar
+el fondo y la mesa del escáner?" Respuesta: el artefacto ORIGINAL
+(un único píxel saturado, siempre en la esquina inferior derecha,
+sección 5.3) SÍ desaparece — pero es reemplazado por uno DISTINTO y,
+verificado cuantitativamente, TODAVÍA MÁS independiente del contenido
+de la imagen: un degradado suave izquierda-derecha que ignora por
+completo la forma de la máscara pulmonar (se extiende sobre el fondo
+negro igual que sobre el pulmón). Verificación: se comparó la
+correlación de Pearson entre los mapas de calor CRUDOS (7×7, antes de
+superponer nada) de 3 imágenes de clases y contenido completamente
+distintos → 0.999 de correlación. Es decir, el mapa es, en la
+práctica, CONSTANTE sin importar la imagen de entrada — un problema
+igual de grave que el original, solo que con una forma visual distinta
+(antes un punto, ahora un degradado) que por eso mismo es más fácil de
+pasar por alto con solo mirar las imágenes sin medir la correlación.
+
+CONCLUSIÓN PARA EL TFM (ambos resultados, honestos, tal como se
+pidió): ni la exactitud ni la explicabilidad mejoraron con este
+experimento de segmentación clásica. Esto no invalida la segmentación
+como idea — el objetivo específico 1 de la propuesta queda cumplido
+porque SE IMPLEMENTÓ y se evaluó rigurosamente, con validación previa
+documentada (incluido el bug real encontrado y corregido) — pero el
+enfoque clásico concreto usado aquí no demostró beneficio frente al
+pipeline sin segmentar, y el patrón de Grad-CAM "constante" persiste
+bajo una forma distinta, reforzando que su causa es más probablemente
+una propiedad estructural de EfficientNetB0 que algo relacionado con
+el fondo de la imagen.
+
+Commit y push de esta tarea hechos por separado, antes de continuar a
+la Tarea 3 (CutMix/Mixup), a la espera de confirmación del usuario.
+
+ESTADO ACTUAL: los 4 modelos originales están entrenados y evaluados
+con los presupuestos de épocas de la Fase 8, con especificidad por
+clase (Fase 10, Tarea 1), y ahora hay un 5º modelo (Transfer Learning +
+Segmentación, Fase 10, Tarea 2) que NO mejoró al original pero cumple
+el objetivo específico 1 de la propuesta y deja un hallazgo honesto
+sobre Grad-CAM. Queda UNA sola app web (FastAPI + frontend
 propio en src/frontend/), con todas las mejoras de las Fases 6, 8 y 9
 (épocas configurables con límite visible, entrenar todos, log
 persistente, botón Detener corregido, rediseño minimalista) y probada
@@ -796,12 +917,55 @@ CNN". La comparación correcta, imposible de hacer con los datos
 disponibles, requeriría un split a nivel de paciente.
 
 --------------------------------------------------------------------
-4.5 Tabla resumen (resultados FINALES, tercera ronda — Fase 8; especificidad añadida en la Fase 10)
+4.6 Transfer Learning + Segmentación (Fase 10, Tarea 2) — NO MEJORÓ
+--------------------------------------------------------------------
+Mismo modelo e hiperparámetros que 4.3 (EfficientNetB0, 50 capas
+descongeladas, mismo LR y presupuesto de épocas), entrenado sobre
+dataset_splits_segmented.npz (fondo y mesa del escáner eliminados por
+segmentación clásica, ver Fase 10/Tarea 2 en la sección 3) en vez del
+dataset original. Evaluado sobre el TEST SEGMENTADO (no el original,
+para que la distribución de entrada coincida con la de entrenamiento).
+
+RESULTADO: empeoró frente al modelo sin segmentar en casi todo.
+Exactitud 0.7879 (vs 0.7939, casi igual), pero AUC-ROC 0.9118 (vs
+0.9563, bajó) y F1 macro 0.6968 (vs 0.7330, bajó). La caída más
+importante: sensibilidad Benigno 0.5556 (vs 0.8333) — se pierde gran
+parte de la mejora que hacía valioso al modelo original. Sensibilidad
+Maligno sube (0.8929 vs 0.8571) y Normal sube levemente (0.7143 vs
+0.6984). Especificidad: Benigno sube (0.8571 vs 0.8299), pero Maligno
+(0.9630 vs 1.0000) y Normal (0.8922 vs 0.9118) bajan.
+
+HIPÓTESIS: eliminar el fondo y la mesa del escáner también elimina
+contexto (posición/forma del cuerpo, caja torácica) que la red venía
+aprovechando de forma implícita; además la segmentación clásica no es
+perfecta y añade su propio ruido (bordes irregulares, recorte parcial
+de masas grandes que tocan el borde pulmonar — ver
+ejemplos_segmentacion.png y el caso Maligno en el prototipo con notch
+visible en la máscara).
+
+GRAD-CAM: el artefacto de la esquina saturada (sección 5.3) DESAPARECE
+en este modelo, pero es reemplazado por un degradado izquierda-derecha
+que ignora la forma de la máscara pulmonar — y que, verificado con
+correlación de Pearson entre mapas de calor crudos de 3 imágenes de
+contenido distinto, es prácticamente constante (r=0.999). La
+segmentación cambió la FORMA del problema de explicabilidad, no lo
+resolvió — ver el detalle completo en la Fase 10/Tarea 2 (sección 3).
+
+CONCLUSIÓN: resultado negativo, documentado íntegramente tal como
+pidió el usuario. El objetivo específico 1 de la propuesta (implementar
+segmentación) queda cumplido porque se implementó, validó y evaluó con
+rigor — el hallazgo de que este enfoque clásico concreto no mejora el
+modelo es en sí mismo un resultado válido para el TFM, no un fallo del
+proceso.
+
+--------------------------------------------------------------------
+4.7 Tabla resumen (resultados FINALES, tercera ronda — Fase 8; especificidad y 5º modelo añadidos en la Fase 10)
 --------------------------------------------------------------------
 Modelo                     Exactitud  AUC-ROC  F1 Macro  Sens.Benigno Sens.Maligno Sens.Normal
 CNN Base (arreglada)         0.8667    0.9449   0.7490    0.44         0.99         0.83
 CNN + Augmentation (colapsa) 0.5091    0.7233   0.2249    0.00         1.00         0.00   <- idéntica a la 2da ronda
-Transfer Learning (EffNet)   0.7939    0.9563   0.7330    0.83         0.86         0.70   <- bajó vs 2da ronda, recomendado igual
+Transfer Learning (EffNet)   0.7939    0.9563   0.7330    0.83         0.86         0.70   <- modelo recomendado
+Transfer + Segmentación      0.7879    0.9118   0.6968    0.56         0.89         0.71   <- NO mejoró al original (Fase 10/Tarea 2)
 SVM (HOG) linea base         1.0000    1.0000   1.0000    1.00         1.00         1.00   <- sospechoso de leakage, sin cambios
 
 Especificidad por clase (uno-contra-el-resto, ver Fase 10 para la fórmula):
@@ -809,7 +973,8 @@ Modelo                     Espec.Benigno  Espec.Maligno  Espec.Normal  Espec.Mac
 CNN Base                     0.9184         1.0000         0.9020        0.9401
 CNN + Augmentation            1.0000         0.0000         1.0000        0.6667   <- 0.00 en Maligno: nunca descarta a nadie de esa clase
 Transfer Learning             0.8299         1.0000         0.9118        0.9139
-SVM (HOG) linea base          1.0000         1.0000         1.0000        1.0000
+Transfer + Segmentación        0.8571         0.9630         0.8922        0.9041
+SVM (HOG) linea base            1.0000         1.0000         1.0000        1.0000
 
 Comparación con la segunda ronda (techo de épocas 80/50, sección 4 de
 versiones anteriores de este documento):
@@ -1041,7 +1206,13 @@ el handle para el proceso hijo).
     volumétrica de cortes consecutivos, en vez de clasificar cortes
     2D de forma independiente.
   - Mejorar la explicabilidad: probar Grad-CAM++ u otras variantes
-    menos sensibles a canales de activación atípica (ver 5.3).
+    menos sensibles a canales de activación atípica (ver 5.3) — el
+    patrón persiste (con otra forma) incluso tras segmentar (Fase 10),
+    así que el problema no parece estar en el fondo de la imagen.
+  - Probar segmentación pulmonar APRENDIDA (una U-Net sobre máscaras
+    anotadas) en vez del enfoque clásico Otsu + morfología de la Fase
+    10 — el enfoque clásico no mejoró el modelo, pero no descarta que
+    una segmentación más precisa sí pudiera hacerlo.
   - La app Streamlit se eliminó en la Fase 9 por quedar redundante
     frente a la de FastAPI (ver esa sección para el detalle). Si en
     algún momento hiciera falta una segunda interfaz más simple,
@@ -1054,16 +1225,22 @@ el handle para el proceso hijo).
 8. QUÉ HAY DISPONIBLE COMO EVIDENCIA / MATERIAL PARA EL DOCUMENTO
 ====================================================================
 
-  outputs/figures/          Gráficos EDA, curvas de entrenamiento,
-                             matrices de confusión, tabla comparativa,
-                             curvas ROC comparativas de los 4 modelos,
-                             classification report de cada modelo como
-                             imagen, y JSON con todas las métricas
-                             exactas.
-  outputs/gradcam/gradcam_grid.png   Grid de Grad-CAM sobre el mejor
-                             modelo (9 ejemplos, 3 por clase).
-  outputs/models/            Los 4 modelos entrenados guardados en
-                             disco (.keras y .joblib).
+  outputs/figures/          Gráficos EDA, ejemplos de segmentación
+                             pulmonar, curvas de entrenamiento, matrices
+                             de confusión, tablas comparativas
+                             (sensibilidad y especificidad por
+                             separado), gráfico de barras sensibilidad
+                             vs especificidad, curvas ROC comparativas
+                             de los 5 modelos, classification report de
+                             cada modelo como imagen, y JSON con todas
+                             las métricas exactas.
+  outputs/gradcam/           Grid de Grad-CAM del mejor modelo
+                             (gradcam_grid.png) y de su variante
+                             segmentada (gradcam_grid_segmentado.png),
+                             9 ejemplos cada uno, 3 por clase.
+  outputs/models/            Los 5 modelos entrenados guardados en
+                             disco (.keras y .joblib), incluido
+                             transfer_efficientnet_segmented.keras.
   README.md                  Documentación técnica completa: cómo
                              instalar, ejecutar el pipeline y usar
                              la app web, con la misma tabla de
@@ -1179,8 +1356,10 @@ objetivo, forma parte de una evaluación crítica honesta.
 
 OBJETIVOS ESPECÍFICOS Y SU CUMPLIMIENTO
 
-  1. Preprocesar y analizar el dataset IQ-OTH/NCCD (normalización,
-     partición estratificada 70/15/15, data augmentation).
+  1. Preprocesar una base de datos de tomografías computarizadas
+     implementando técnicas de segmentación y aumento de datos
+     (normalización, partición estratificada 70/15/15, segmentación,
+     data augmentation).
 
      CUMPLIDO. Se implementó un análisis exploratorio (01_eda.py) que
      caracteriza la distribución de clases (120 Benigno / 561 Maligno
@@ -1197,7 +1376,15 @@ OBJETIVOS ESPECÍFICOS Y SU CUMPLIMIENTO
      Keras, y se implementó aumento de datos en tiempo real (flip
      horizontal, rotación, zoom, contraste) para uno de los tres
      modelos CNN, evaluando su efecto de forma controlada frente a la
-     misma arquitectura sin augmentation.
+     misma arquitectura sin augmentation. Adicionalmente (02b_segmentation.py)
+     se implementó segmentación pulmonar clásica (Otsu + morfología
+     matemática, sin deep learning) que aísla los campos pulmonares
+     eliminando fondo, mesa del escáner y estructuras óseas; se
+     reentrenó el modelo recomendado (Transfer Learning) sobre estos
+     datos para medir el efecto real de segmentar — el resultado fue
+     negativo (no mejoró exactitud, AUC-ROC ni F1, y la sensibilidad
+     en Benigno bajó notablemente), un hallazgo honesto que se
+     documenta íntegramente en vez de ocultarse (ver 9.4 y 4.6).
 
   2. Diseñar, entrenar y comparar tres arquitecturas: CNN base, CNN
      con augmentation, y transfer learning (EfficientNetB0).
@@ -1349,24 +1536,27 @@ científica del TFM en sí.
 --------------------------------------------------------------------
 9.4 Resultados
 --------------------------------------------------------------------
-La tabla siguiente resume los resultados FINALES (tercera ronda de
-entrenamiento, Fase 8) de los cuatro modelos sobre el conjunto de
-prueba (165 imágenes: 18 Benigno, 84 Maligno, 63 Normal):
+La tabla siguiente resume los resultados FINALES de los cinco modelos
+sobre el conjunto de prueba (165 imágenes: 18 Benigno, 84 Maligno, 63
+Normal — el modelo segmentado se evalúa sobre la versión segmentada de
+ese mismo conjunto, misma composición y etiquetas):
 
-Modelo                  Exactitud  AUC-ROC  F1 Macro  Sens.Benigno  Sens.Maligno  Sens.Normal
-CNN Base                  0.8667    0.9449    0.7490      0.4444        0.9881       0.8254
-CNN + Augmentation        0.5091    0.7233    0.2249      0.0000        1.0000       0.0000
-Transfer Learning         0.7939    0.9563    0.7330      0.8333        0.8571       0.6984
-SVM (HOG) — línea base    1.0000    1.0000    1.0000      1.0000        1.0000       1.0000
+Modelo                    Exactitud  AUC-ROC  F1 Macro  Sens.Benigno  Sens.Maligno  Sens.Normal
+CNN Base                    0.8667    0.9449    0.7490      0.4444        0.9881       0.8254
+CNN + Augmentation           0.5091    0.7233    0.2249      0.0000        1.0000       0.0000
+Transfer Learning             0.7939    0.9563    0.7330      0.8333        0.8571       0.6984
+Transfer + Segmentación         0.7879    0.9118    0.6968      0.5556        0.8929       0.7143
+SVM (HOG) — línea base            1.0000    1.0000    1.0000      1.0000        1.0000       1.0000
 
 Especificidad por clase (uno-contra-el-resto, añadida en la Fase 10
 para cubrir el objetivo específico 3 de la propuesta del TFM):
 
-Modelo                  Espec.Benigno  Espec.Maligno  Espec.Normal  Espec.Macro
-CNN Base                   0.9184         1.0000         0.9020        0.9401
-CNN + Augmentation          1.0000         0.0000         1.0000        0.6667
-Transfer Learning           0.8299         1.0000         0.9118        0.9139
-SVM (HOG) — línea base      1.0000         1.0000         1.0000        1.0000
+Modelo                    Espec.Benigno  Espec.Maligno  Espec.Normal  Espec.Macro
+CNN Base                     0.9184         1.0000         0.9020        0.9401
+CNN + Augmentation             1.0000         0.0000         1.0000        0.6667
+Transfer Learning                0.8299         1.0000         0.9118        0.9139
+Transfer + Segmentación            0.8571         0.9630         0.8922        0.9041
+SVM (HOG) — línea base                1.0000         1.0000         1.0000        1.0000
 
 (Fuente: outputs/figures/metricas_comparativas.json y
 metricas_svm_baseline.json, generados por 06_evaluate.py y
@@ -1430,6 +1620,20 @@ Lectura de los resultados por objetivo:
     técnicas del propio sistema, no un fallo del proceso de
     investigación.
 
+  - Frente al objetivo de implementar segmentación (ver 9.2, punto 1),
+    el resultado del reentrenamiento sobre datos segmentados (sección
+    4.6) es negativo: exactitud prácticamente igual (0.7879 vs 0.7939)
+    pero AUC-ROC, F1 macro y sensibilidad Benigno más bajos que el
+    modelo sin segmentar. El experimento de Grad-CAM asociado
+    (¿desaparece el artefacto de la esquina al quitar el fondo?)
+    confirma que SÍ desaparece esa forma concreta del artefacto, pero
+    es sustituida por un patrón igual de constante (r=0.999 entre
+    imágenes distintas) bajo una forma diferente — la segmentación
+    clásica no resolvió el problema de fondo, solo lo desplazó. Ambos
+    resultados se documentan tal cual, como evidencia metodológica
+    válida sobre los límites de un enfoque de segmentación clásico
+    (no aprendido) en este problema.
+
 --------------------------------------------------------------------
 9.5 Explicación de las figuras generadas (para incluir como pies de figura)
 --------------------------------------------------------------------
@@ -1486,6 +1690,15 @@ ANÁLISIS EXPLORATORIO (generadas por 01_eda.py)
     no lo son) — relevante para la discusión de por qué el colapso de
     este modelo se atribuye a la interacción con un dataset pequeño y
     no a transformaciones agresivas o irreales.
+
+  - ejemplos_segmentacion.png (Fase 10, generada por
+    02b_segmentation.py): original, máscara binaria y resultado
+    segmentado, un ejemplo por clase. Evidencia visual del algoritmo
+    de segmentación (Otsu + restricción a la silueta corporal + top-2
+    componentes conexos) tras la validación sobre 24+150 imágenes — ver
+    Fase 10/Tarea 2 en la sección 3 para el bug real encontrado
+    (la mesa del escáner colándose como si fuera un pulmón) y cómo se
+    corrigió antes de procesar el dataset completo.
 
 CURVAS DE ENTRENAMIENTO (una por modelo de Keras, generadas por
 03/04/05_train_*.py al final de cada entrenamiento)
@@ -1587,6 +1800,17 @@ EXPLICABILIDAD (generada por 07_gradcam.py)
     señalando regiones anatómicas relevantes para la decisión del
     modelo.
 
+  - gradcam_grid_segmentado.png (Fase 10, generada por
+    07b_gradcam_segmentado.py): mismo formato, sobre el modelo
+    Transfer Learning + Segmentación. El punto saturado en la esquina
+    desaparece, pero se reemplaza por un degradado izquierda-derecha
+    que ignora la forma de la máscara pulmonar (se extiende también
+    sobre el fondo negro). Verificado que no es casualidad: la
+    correlación de Pearson entre los mapas de calor crudos (7×7) de 3
+    imágenes de contenido distinto es 0.999 — el mapa es, en la
+    práctica, constante. La segmentación cambió la forma del problema
+    de explicabilidad sin resolverlo.
+
 --------------------------------------------------------------------
 9.6 Discusión
 --------------------------------------------------------------------
@@ -1634,17 +1858,34 @@ uno introduce más varianza de la que aparenta una cifra con cuatro
 decimales, lo que motiva validación cruzada como mejora metodológica
 prioritaria de cara a un trabajo futuro.
 
+La cuarta es que una intervención de preprocesamiento intuitivamente
+razonable —segmentar los pulmones para que el modelo solo vea tejido
+relevante— no garantiza una mejora, y verificarlo empíricamente en vez
+de asumirlo es en sí mismo parte del método científico. La segmentación
+clásica implementada no mejoró ninguna métrica agregada del modelo
+recomendado, y empeoró notablemente su sensibilidad en la clase
+minoritaria (Benigno). Más revelador aún: el problema de explicabilidad
+de Grad-CAM sobrevivió a la segmentación, solo cambiando de forma (de
+un punto saturado a un degradado), y una verificación cuantitativa
+(correlación 0.999 entre mapas de calor de imágenes distintas) mostró
+que en realidad es igual de severo que antes. Esto apunta a que la
+causa del problema de explicabilidad está más en cómo EfficientNetB0
+integra información espacial en su última capa que en qué contenga la
+imagen de entrada — una hipótesis que ninguna intervención de
+preprocesamiento, por sí sola, puede resolver.
+
 --------------------------------------------------------------------
 9.7 Conclusiones (borrador)
 --------------------------------------------------------------------
 Este trabajo desarrolló y evaluó un sistema de apoyo al diagnóstico
 para la clasificación de imágenes de TC de tórax en tres categorías,
-cumpliendo los cuatro objetivos específicos planteados: se preprocesó
-y caracterizó el dataset IQ-OTH/NCCD, se diseñaron, entrenaron y
-compararon tres arquitecturas de CNN frente a una línea base clásica,
-se evaluaron con un conjunto común de métricas estándar de
-clasificación médica, y se generaron e interpretaron críticamente
-mapas de explicabilidad Grad-CAM sobre el mejor modelo.
+cumpliendo los cuatro objetivos específicos planteados: se preprocesó,
+segmentó y caracterizó el dataset IQ-OTH/NCCD, se diseñaron, entrenaron
+y compararon tres arquitecturas de CNN frente a una línea base
+clásica, se evaluaron con un conjunto común de métricas estándar de
+clasificación médica (incluida sensibilidad Y especificidad por
+clase), y se generaron e interpretaron críticamente mapas de
+explicabilidad Grad-CAM sobre el mejor modelo y su variante segmentada.
 
 Los resultados muestran que, tras diagnosticar y corregir un problema
 real de inestabilidad de entrenamiento, es posible entrenar modelos
@@ -1657,11 +1898,15 @@ en el modelo recomendado para un caso de uso de cribado donde no
 detectar un caso tiene un coste alto. Al mismo tiempo, el trabajo
 documenta con la misma transparencia los resultados que no favorecen
 al sistema: un modelo (CNN + Augmentation) cuyo colapso de
-entrenamiento no se logró resolver por completo, una línea base
-clásica cuyo resultado perfecto es evidencia de fuga de datos y no de
-capacidad real, y una limitación de explicabilidad en el modelo
-recomendado que impide, en su estado actual, ofrecer al radiólogo una
-justificación visual fiable de cada predicción.
+entrenamiento no se logró resolver por completo (con especificidad
+0.00 en Maligno, la evidencia más clara de ese colapso), una línea
+base clásica cuyo resultado perfecto es evidencia de fuga de datos y
+no de capacidad real, un experimento de segmentación pulmonar clásica
+que no mejoró el modelo recomendado, y una limitación de
+explicabilidad en el modelo recomendado —que persiste, solo que con
+otra forma, incluso tras segmentar— que impide, en su estado actual,
+ofrecer al radiólogo una justificación visual fiable de cada
+predicción.
 
 La conclusión general es que el sistema desarrollado cumple su
 objetivo como PROTOTIPO ACADÉMICO de apoyo al diagnóstico, pero no
