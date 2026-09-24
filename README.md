@@ -409,24 +409,184 @@ ROC macro-average superpuestas) y `classification_report_<modelo>.png`
 
 ### Catálogo de figuras generadas
 
-Todas en `outputs/figures/` salvo el grid de Grad-CAM, en
-`outputs/gradcam/`. *(Explicación detallada de qué muestra e interpreta
-cada una, lista para usar como pie de figura en el TFM, en la sección 9.5
-de `PROYECTO_CLAUDE_CONTEXTO.txt`.)*
+Cada figura de `outputs/figures/` (y el grid de Grad-CAM, en
+`outputs/gradcam/`) con su imagen incrustada, para que quede claro de un
+vistazo cuál es cuál, y el resultado concreto que aporta cada una — listo
+para usar como pie de figura en el TFM.
 
-| Figura | Qué muestra |
-|---|---|
-| `distribucion_clases.png` | Nº de imágenes por clase — evidencia del desbalance (Maligno 561 vs. Benigno 120) |
-| `distribucion_tamanos.png` | Histogramas de ancho/alto originales — > 95% del dataset comparte un único tamaño |
-| `distribucion_intensidad.png` | Densidad de intensidad de píxel por clase — bimodal, clases muy superpuestas |
-| `muestras_por_clase.png` | 9 cortes axiales de ejemplo (3 por clase) |
-| `muestras_augmentation.png` | 1 imagen original + 9 variantes generadas por la capa de aumento de datos |
-| `curvas_<modelo>.png` (×3) | Pérdida y exactitud de entrenamiento/validación por época, una por modelo Keras |
-| `confusion_matrix_<modelo>.png` (×4) | Matriz de confusión 3×3 por modelo |
-| `classification_report_<modelo>.png` (×4) | Precision/recall/f1/support por clase, como imagen |
-| `curvas_roc_comparativas.png` | Curvas ROC macro-average de los 4 modelos superpuestas |
-| `tabla_comparativa.png` | La tabla de [Resultados](#resultados) como imagen |
-| `gradcam_grid.png` | 9 mapas Grad-CAM (3 por clase) del mejor modelo — ver [Hallazgo #6](#hallazgos-y-análisis) |
+#### Análisis exploratorio del dataset (`01_eda.py`)
+
+<img src="outputs/figures/distribucion_clases.png" width="620">
+
+**`distribucion_clases.png`** — Nº de imágenes por clase. **Resultado:**
+desbalance claro: Maligno (561) tiene más de 4.5× las imágenes de Benigno
+(120); Normal queda en medio (416). Justifica usar
+`class_weight="balanced"` en los tres modelos de Keras.
+
+<img src="outputs/figures/distribucion_tamanos.png" width="620">
+
+**`distribucion_tamanos.png`** — Histogramas de ancho y alto originales
+(antes de normalizar). **Resultado:** pese a que el rango declarado es
+506–801 px de ancho y 331–512 px de alto, más del 95% de las 1097
+imágenes comparte un único tamaño (≈506×512 px); solo un puñado de casos
+atípicos se aparta de ese valor. Confirma que redimensionar todo a
+224×224 px es una normalización segura, sin distorsión desigual entre
+imágenes.
+
+<img src="outputs/figures/distribucion_intensidad.png" width="620">
+
+**`distribucion_intensidad.png`** — Densidad de intensidad de píxel
+(0-255) superpuesta por clase. **Resultado:** distribución bimodal (pico
+dominante en 40-50, pico secundario disperso en 190-230) con las tres
+clases prácticamente superpuestas entre sí. La intensidad de píxel por
+sí sola no separa las clases — justifica que la tarea necesite un modelo
+que aprenda patrones espaciales/texturales, no solo estadísticos de
+intensidad.
+
+<img src="outputs/figures/muestras_por_clase.png" width="620">
+
+**`muestras_por_clase.png`** — 9 cortes axiales de TC de tórax de
+ejemplo (3 por clase). **Resultado:** referencia visual cualitativa; en
+los ejemplos Maligno se aprecian masas/nódulos de mayor tamaño o
+densidad en el parénquima pulmonar, mientras que en los ejemplos Normal
+no hay hallazgos evidentes — aunque la diferencia no siempre es obvia a
+simple vista, lo que refuerza por qué hace falta un modelo entrenado en
+vez de una regla visual simple.
+
+<img src="outputs/figures/muestras_augmentation.png" width="620">
+
+**`muestras_augmentation.png`** — 1 imagen original + 9 variantes
+generadas por la capa de aumento de datos (flip horizontal, rotación
+±0.08, zoom ±0.05, contraste). **Resultado:** las transformaciones son
+sutiles y anatómicamente plausibles para una TC de tórax — por eso se
+descartaron explícitamente el flip vertical y la traslación, que no lo
+son (ver [Metodología](#metodología)).
+
+#### CNN Base
+
+<img src="outputs/figures/curvas_cnn_base.png" width="620">
+
+**`curvas_cnn_base.png`** — Pérdida y exactitud de entrenamiento/
+validación por época. **Resultado:** convergencia sana — la pérdida de
+validación baja de forma sostenida hasta estabilizarse alrededor de la
+época 22 (val_loss 0.5875, val_accuracy 0.861), sin la explosión de
+pérdida de la primera ronda (ver [Hallazgo #1](#hallazgos-y-análisis)).
+
+<img src="outputs/figures/confusion_matrix_cnn_base.png" width="480">
+
+**`confusion_matrix_cnn_base.png`** — Matriz de confusión 3×3 sobre las
+165 imágenes de test. **Resultado:** los errores se concentran en
+confundir Benigno con Normal (10 de 18 casos Benigno se predicen como
+Normal); Maligno prácticamente sin errores (83/84).
+
+<img src="outputs/figures/classification_report_cnn_base.png" width="480">
+
+**`classification_report_cnn_base.png`** — Precision/recall/f1/support
+por clase. **Resultado:** precisión muy dispar entre clases — Maligno
+1.000, Normal 0.839, pero Benigno solo 0.400 (de cada 10 predicciones
+"Benigno", solo 4 son correctas), reflejo directo de la confusión con
+Normal vista en la matriz.
+
+#### CNN + Augmentation
+
+<img src="outputs/figures/curvas_cnn_augmented.png" width="620">
+
+**`curvas_cnn_augmented.png`** — Pérdida y exactitud de entrenamiento/
+validación por época. **Resultado:** patrón de colapso — la exactitud de
+validación se congela casi desde la época 1 (mejor punto: la propia
+época 1, val_loss 1.019, val_accuracy 0.509) y nunca vuelve a mejorar,
+mientras la de entrenamiento sigue moviéndose.
+
+<img src="outputs/figures/confusion_matrix_cnn_augmentation.png" width="480">
+
+**`confusion_matrix_cnn_augmentation.png`** — Matriz de confusión.
+**Resultado:** la firma visual inequívoca de un modelo colapsado a una
+sola clase — la columna "Maligno" recibe las 165 predicciones (18/18
+Benigno, 84/84 Maligno, 63/63 Normal mal clasificados como Maligno,
+salvo los 84 que sí lo son).
+
+<img src="outputs/figures/classification_report_cnn_augmentation.png" width="480">
+
+**`classification_report_cnn_augmentation.png`** — Precision/recall/f1
+por clase. **Resultado:** precision y recall en 0.000 para Benigno y
+Normal (nunca se predicen), precision 0.509 y recall 1.000 para
+Maligno — coherente con un modelo que predice siempre la clase
+mayoritaria.
+
+#### Transfer Learning (EfficientNetB0)
+
+<img src="outputs/figures/curvas_transfer_learning.png" width="620">
+
+**`curvas_transfer_learning.png`** — Pérdida y exactitud de
+entrenamiento/validación por época. **Resultado:** las dos fases del
+entrenamiento se distinguen con claridad — el salto de exactitud al
+iniciar la fase 2 (fine-tuning) tras 9 épocas de fase 1, hasta
+estabilizarse en el mejor punto (val_loss 0.4993, val_accuracy 0.830).
+
+<img src="outputs/figures/confusion_matrix_transfer_learning.png" width="480">
+
+**`confusion_matrix_transfer_learning.png`** — Matriz de confusión.
+**Resultado:** errores más repartidos y en ambas direcciones que la CNN
+Base (15/18 Benigno correcto, 72/84 Maligno, 44/63 Normal) — ningún
+error masivo hacia una sola clase, coherente con su sensibilidad más
+equilibrada.
+
+<img src="outputs/figures/classification_report_transfer_learning.png" width="480">
+
+**`classification_report_transfer_learning.png`** — Precision/recall/f1
+por clase. **Resultado:** precisión también más pareja que la CNN Base
+(Benigno 0.375, Maligno 1.000, Normal 0.830) — la mejora frente a CNN
+Base no está en acertar más en total, sino en repartir mejor los
+aciertos entre las tres clases.
+
+#### SVM (HOG) — línea base
+
+<img src="outputs/figures/confusion_matrix_svm_baseline.png" width="480">
+
+**`confusion_matrix_svm_baseline.png`** — Matriz de confusión.
+**Resultado:** diagonal perfecta, sin un solo error (18/18, 84/84,
+63/63) — la evidencia visual más directa de la sospecha de fuga de
+datos (ver [Hallazgo #5](#hallazgos-y-análisis)); ningún clasificador
+clásico sin aprendizaje de representaciones debería lograr esto en un
+problema médico real.
+
+<img src="outputs/figures/classification_report_svm_baseline.png" width="480">
+
+**`classification_report_svm_baseline.png`** — Precision/recall/f1 por
+clase. **Resultado:** 1.000 en las tres métricas para las tres clases —
+mismo resultado, misma advertencia.
+
+#### Comparación entre los 4 modelos
+
+<img src="outputs/figures/curvas_roc_comparativas.png" width="620">
+
+**`curvas_roc_comparativas.png`** — Curvas ROC macro-average
+(one-vs-rest) de los 4 modelos superpuestas, con el AUC de cada una en
+la leyenda. **Resultado:** la curva de la SVM pegada a la esquina
+superior izquierda (AUC≈1.0) vuelve a ser la señal visual de que ese
+resultado no es creíble; CNN Base y Transfer Learning se superponen
+bastante entre sí y quedan claramente por encima de CNN + Augmentation,
+que se acerca mucho más a la diagonal aleatoria en la zona de FPR
+bajo-medio.
+
+<img src="outputs/figures/tabla_comparativa.png" width="620">
+
+**`tabla_comparativa.png`** — La tabla de [Resultados](#resultados)
+renderizada como imagen, lista para incluir en el documento sin
+recrearla.
+
+#### Explicabilidad
+
+<img src="outputs/gradcam/gradcam_grid.png" width="720">
+
+**`gradcam_grid.png`** — 9 mapas Grad-CAM (original + calor superpuesto)
+del modelo de Transfer Learning, 3 ejemplos por clase, con la predicción
+y confianza de cada uno. **Resultado:** en las 9 imágenes el punto
+caliente aparece siempre en la misma esquina inferior derecha,
+independientemente del contenido real de la imagen o de la clase
+predicha — evidencia visual directa de que el mapa no señala regiones
+anatómicas relevantes para la decisión del modelo (ver
+[Hallazgo #6](#hallazgos-y-análisis)).
 
 ## Hallazgos y análisis
 

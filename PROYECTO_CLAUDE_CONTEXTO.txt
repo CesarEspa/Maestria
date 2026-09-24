@@ -1396,12 +1396,15 @@ CURVAS DE ENTRENAMIENTO (una por modelo de Keras, generadas por
     validación por época. Son la evidencia visual directa de
     convergencia (o falta de ella): la de CNN Base muestra una
     convergencia sana, con la pérdida de validación bajando de forma
-    sostenida hasta estabilizarse; la de CNN + Augmentation muestra el
-    patrón de colapso (la exactitud de validación se congela en un
-    valor fijo casi desde el principio, mientras la de entrenamiento
-    sigue moviéndose); la de Transfer Learning muestra las dos fases
-    del entrenamiento claramente diferenciadas (el salto de exactitud
-    al iniciar la fase 2 de ajuste fino).
+    sostenida hasta estabilizarse en la época 22 (val_loss 0.5875,
+    val_accuracy 0.861); la de CNN + Augmentation muestra el patrón de
+    colapso (la exactitud de validación se congela casi desde la
+    época 1 —su propio mejor punto, val_loss 1.019, val_accuracy
+    0.509— mientras la de entrenamiento sigue moviéndose); la de
+    Transfer Learning muestra las dos fases del entrenamiento
+    claramente diferenciadas (el salto de exactitud al iniciar la
+    fase 2 de ajuste fino tras la época 9, hasta estabilizarse en
+    val_loss 0.4993, val_accuracy 0.830).
 
 COMPARACIÓN ENTRE MODELOS (generadas por 06_evaluate.py)
 
@@ -1423,7 +1426,17 @@ COMPARACIÓN ENTRE MODELOS (generadas por 06_evaluate.py)
     forma de imagen con precision, recall, f1-score y support por
     clase. Es una vista complementaria a la matriz de confusión, útil
     para citar cifras exactas de precisión y exhaustividad por clase
-    en el cuerpo del texto sin tener que calcularlas de nuevo.
+    en el cuerpo del texto sin tener que calcularlas de nuevo. La
+    precisión por clase confirma el mismo patrón que ya mostraba la
+    matriz de confusión: en CNN Base, precisión 0.400 en Benigno frente
+    a 1.000 en Maligno y 0.839 en Normal (de cada 10 predicciones
+    "Benigno", solo 4 son correctas); en CNN + Augmentation, precisión
+    y recall en 0.000 para Benigno y Normal (nunca se predicen) y
+    precisión 0.509 / recall 1.000 en Maligno; en Transfer Learning,
+    precisión más pareja entre clases (0.375 / 1.000 / 0.830) que en
+    CNN Base, reflejo de que su mejora no está en acertar más en
+    total sino en repartir mejor los aciertos; en la SVM, 1.000 en
+    las tres métricas para las tres clases.
 
   - curvas_roc_comparativas.png: las curvas ROC macro-average
     (one-vs-rest) de los 4 modelos superpuestas en un único gráfico,
