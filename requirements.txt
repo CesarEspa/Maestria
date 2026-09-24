@@ -1,20 +1,17 @@
-# Dependencias del PIPELINE (scripts 01 a 08). Versiones fijadas (==) para
-# reproducibilidad exacta del TFM.
+# Todas las dependencias del proyecto: pipeline (scripts 01 a 08) + backend
+# web (FastAPI). Versiones fijadas (==) para reproducibilidad exacta del TFM.
 #
-# IMPORTANTE — instalar en este orden exacto (no combinar en un solo
-# comando con requirements-web.txt): tensorflow exige protobuf<5 y
-# streamlit exige protobuf>=5.26.1; son metadatos mutuamente excluyentes,
-# así que pip solo puede resolverlos en INVOCACIONES SEPARADAS (dentro de
-# una misma invocación, con ambos paquetes a la vez, pip falla con
-# "ResolutionImpossible" — es una limitación real de pip, no un error de
-# este archivo). En la práctica, protobuf 4.25.9 funciona bien en tiempo
-# de ejecución con las dos librerías pese al conflicto declarado.
-#
+# Un único comando de instalación:
 #   pip install -r requirements.txt
-#   pip install -r requirements-web.txt
-#   pip install "protobuf==4.25.9"
 #
-# (ver también la sección "Instalación" del README.md)
+# (Hasta la versión anterior de este proyecto también existía una app web
+# en Streamlit, que exigía protobuf>=5.26.1 —incompatible con el
+# protobuf<5 de TensorFlow— y obligaba a instalar en 3 pasos separados con
+# un pin manual de protobuf. Se eliminó esa app por quedar redundante frente
+# a la versión FastAPI, así que ese conflicto ya no existe: todo se instala
+# en una sola invocación, verificado de extremo a extremo en un venv nuevo.)
+
+# Pipeline (EDA, preprocesamiento, entrenamiento, evaluación, Grad-CAM)
 tensorflow==2.17.1
 numpy==1.26.4
 pandas==3.0.5
@@ -25,3 +22,8 @@ scikit-image==0.26.0
 Pillow==12.3.0
 opencv-python==4.11.0.86
 joblib==1.6.0
+
+# App web (backend FastAPI + frontend HTML/CSS/JS en src/frontend/)
+fastapi==0.141.1
+uvicorn[standard]==0.53.0
+python-multipart==0.0.32

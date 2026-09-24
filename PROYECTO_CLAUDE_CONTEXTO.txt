@@ -333,13 +333,180 @@ antes de creer que un resultado documentado sigue siendo válido, sobre
 todo después de que alguien haya usado el botón "Reentrenar"/"Entrenar
 todos" de la app.
 
-ESTADO ACTUAL: los 4 modelos están entrenados y evaluados (3 de ellos
-reentrenados en la segunda ronda de la Fase 5); las 2 apps web
-funcionan y fueron probadas de extremo a extremo, incluida
-automatización real de navegador (Playwright/Chromium headless), no
-solo pruebas manuales. La app FastAPI tiene además las mejoras de la
-Fase 6 (épocas configurables, entrenar todos, log persistente, botón
-Detener corregido). El proyecto está subido a GitHub:
+FASE 8 — Tercera ronda de entrenamiento: presupuesto de épocas más alto
+----------------------------------------------------------------------
+El usuario pidió: (1) mostrar en la UI el límite de épocas de cada
+modelo junto al campo para elegirlas, (2) mostrar en algún lugar con
+cuántas épocas quedó entrenado cada modelo, y (3) reentrenar los 4
+modelos al máximo de épocas razonable, ajustando después las
+conclusiones documentadas con los resultados reales.
+
+Cambios de UI (frontend/app.js, frontend/style.css): la tarjeta de
+cada modelo ahora muestra "límite actual: N" junto al campo de
+épocas, y cuando el modelo está completado aparece un chip "Épocas
+entrenadas" con el valor real (leído de current_epoch en el JSON de
+progreso, que ya se registraba desde la Fase 5 — solo faltaba
+mostrarlo en la interfaz).
+
+Presupuestos subidos en config.py y 05_train_transfer.py:
+  EPOCHS_BASE (CNN base/aug):        80  -> 120
+  PHASE1_EPOCHS (transfer, fase 1):  15  -> 25
+  EPOCHS_TRANSFER (transfer, fase 2): 50 -> 100
+Motivo: en la ronda anterior, la fase 2 de transfer learning había
+agotado su presupuesto completo (50/50) sin que EarlyStopping llegara
+a activarse, señal de que probablemente seguía mejorando. Las CNN base
+y aug ya paraban muy por debajo de su techo (38 y 14 de 80), así que
+para ellas la subida era más una comprobación de seguridad que una
+necesidad detectada.
+
+Se relanzaron los 4 modelos en secuencia (03, 04, 05, 08) seguidos de
+06_evaluate.py y 07_gradcam.py, todo en un único comando encadenado
+con && para que se detuviera si algún paso fallaba. Duración real
+total: ~85 minutos (17:04 a 18:29) — mucho menos de lo estimado
+inicialmente (2-4 h), porque EarlyStopping siguió cortando temprano en
+las CNN y la fase 2 de transfer learning solo llegó a 52 de las 100
+épocas disponibles.
+
+RESULTADO — desigual entre los tres modelos de Keras (comparado con la
+segunda ronda, 80/50 épocas):
+
+  CNN Base: MEJORÓ. 84.85% -> 86.67% exactitud, AUC 0.939 -> 0.945,
+  F1 macro 0.730 -> 0.749. Paró en la época 34 (mejor: época 22, antes
+  paraba en ~38 con techo de 80 pero sin registro exacto disponible —
+  ver Fase 7). Confirma que este modelo SÍ estaba limitado por el
+  techo anterior.
+
+  CNN + Augmentation: NO MEJORÓ, y paró todavía antes (13 épocas en
+  vez de 14; su "mejor" punto fue la propia época 1, nunca volvió a
+  bajar el val_loss inicial). Exactitud IDÉNTICA (50.91%) porque el
+  modelo colapsa exactamente igual (predice "Maligno" para casi todo
+  el test). Esto descarta con más fuerza que el colapso sea un
+  problema de presupuesto de épocas: con el triple de margen
+  disponible, el modelo ni siquiera lo intenta más allá de la primera
+  época.
+
+  Transfer Learning: EMPEORÓ en test, pese a usar más épocas reales.
+  83.03% -> 79.39% exactitud, AUC 0.976 -> 0.956, F1 macro 0.776 ->
+  0.733, sensibilidad Benigno 0.89 -> 0.83. La fase 2 sí aprovechó el
+  presupuesto extra (52 épocas en vez de 50) y las métricas de
+  VALIDACIÓN del punto elegido por EarlyStopping fueron similares o
+  mejores (val_accuracy 0.830, val_loss 0.499) — es decir, el punto
+  que pareció mejor en validación no generalizó igual de bien a test.
+  Interpretación: con test y validación de solo 165 imágenes cada uno,
+  ambos son pequeños y ruidosos; esto es evidencia práctica (no solo
+  teórica) de por qué la validación cruzada (k-fold) sería una mejora
+  metodológica real — ver sección 7.
+
+  SVM (HOG): se re-ejecutó por completo (era parte de "los 4
+  modelos"), pero al ser un método determinista (sin conceptos de
+  época) produjo un archivo .joblib byte a byte idéntico al anterior
+  — mismo resultado sospechoso de fuga de datos, sin cambios.
+
+Grad-CAM también se regeneró con el nuevo modelo de transfer learning
+y el mismo patrón de saturación en una esquina (sección 5.3) persiste
+sin cambios — ya son tres entrenamientos distintos de transfer
+learning mostrando el mismo artefacto, lo que descarta que sea
+casualidad de un entrenamiento concreto.
+
+CONCLUSIÓN PARA EL TFM: subir el presupuesto de épocas no es una
+mejora automática. Ayudó al modelo que realmente estaba limitado por
+el techo (CNN Base), no cambió nada en el modelo cuyo problema es
+estructural (CNN + Augmentation), y en Transfer Learning introdujo
+varianza que empeoró la cifra de test pese a métricas de validación
+similares. Los tres resultados, incluido el que "salió peor", se
+documentan tal cual — es un hallazgo metodológico legítimo sobre
+optimizar y evaluar con datasets pequeños.
+
+FASE 9 — Rediseño visual, reordenar el campo de épocas, y eliminar la app Streamlit
+----------------------------------------------------------------------
+El usuario pidió tres cosas en esta fase, en mensajes separados: (1) un
+diseño de frontend más minimalista y menos "genérico de IA", con las
+notas de cada modelo en lenguaje entendible y los botones alineados
+entre tarjetas; (2) mover el campo de épocas al lado izquierdo del
+botón Reentrenar (en vez de en su propia fila, como había quedado tras
+el primer intento de arreglar la alineación); y (3), tras preguntar
+"¿crees que puedas optimizar el proyecto, todo lo que tiene es útil e
+importante?", una auditoría de qué sobraba en el proyecto.
+
+Rediseño (src/frontend/style.css, app.js): paleta más plana y
+restringida (un único color de acento en vez de 5-6 compitiendo),
+insignias de estado como punto de color + texto plano en vez de
+píldoras con fondo, chips de métricas como fila de datos simple
+(etiqueta pequeña + número grande) en vez de cajas con fondo, sin
+ícono de marca con degradado ni sombras pesadas en las tarjetas. Las
+notas de cada modelo (training_control.py, campo "note") se
+reescribieron en lenguaje llano, sin jerga técnica (antes: "LayerNorm
++ LR 1e-4, hasta 120 épocas (EarlyStopping paciencia 12)"; ahora: "Red
+neuronal entrenada desde cero, sin variar las imágenes. Tarda entre 35
+y 50 minutos") — el detalle técnico exacto se mantiene en este
+documento y en el README, no en la interfaz.
+
+El problema real de alineación de botones era estructural: el campo de
+épocas compartía fila con el botón, y como el SVM no tiene ese campo
+su fila quedaba más corta, desalineando su botón respecto a los otros
+3. Primero se resolvió moviendo el campo a su propia fila debajo del
+título (quedaba simétrico, pero el usuario pidió después volver a
+ponerlo junto al botón). Se resolvió definitivamente haciendo el campo
+compacto de una sola línea (con el detalle de "máximo permitido" y
+"modelo actual" en un tooltip en vez de texto visible siempre), para
+que quepa a la izquierda del botón sin cambiar la altura de la fila.
+Durante ese último cambio se introdujo y luego se corrigió un bug real
+propio: quedó una referencia a una variable renombrada
+(`epochRow` en vez de `epochField`), que rompía por completo el
+renderizado de la página de Entrenamiento (las tarjetas no se
+dibujaban); se detectó ejecutando la página con Playwright y leyendo
+el error real de JavaScript en vez de asumir que "no restringía el
+máximo" era el único problema.
+
+Auditoría y eliminación de la app Streamlit: revisando qué tenía cada
+interfaz (ver comparación detallada más abajo), se confirmó que
+src/app.py (Streamlit) se había quedado sin las funciones añadidas en
+las Fases 6, 8 y 9 a la app FastAPI (épocas configurables, entrenar
+todos, log persistente, botón Detener corregido, rediseño), y que
+además su propio botón Detener seguía sin el arreglo del bug de la
+Fase 8 (llama a kill_process() pero nunca actualiza el estado a
+"stopped", así que su UI se quedaría mostrando "Entrenando..." hasta 5
+minutos tras detener algo). Con la aprobación explícita del usuario, se
+eliminó src/app.py.
+
+Al eliminar Streamlit se descubrió una simplificación adicional
+importante, verificada con "pip show protobuf" en el venv existente:
+"Required-by: streamlit, tensorboard, tensorflow-intel" — es decir,
+Streamlit era el ÚNICO paquete que exigía protobuf>=5.26.1; ni
+FastAPI ni uvicorn dependen de protobuf en absoluto. Se probó
+instalando requirements.txt (pipeline) + fastapi/uvicorn/
+python-multipart en un venv nuevo, EN UN SOLO COMANDO, y no hubo
+ningún conflicto de dependencias — a diferencia de cuando streamlit
+estaba en la mezcla. Se fusionaron requirements.txt y
+requirements-web.txt en un único requirements.txt, se eliminó
+requirements-web.txt, y la instalación pasó de 3 pasos con un pin
+manual de protobuf a un solo "pip install -r requirements.txt".
+
+También se limpió código muerto encontrado durante la comparación de
+las dos apps: la clase TrainRequest en api.py (un BaseModel de
+Pydantic vacío, sin uso real desde que los parámetros de entrenamiento
+van por query string) y su import de BaseModel, y los comentarios/
+docstrings en training_control.py, api.py, results_utils.py y
+progress_tracker.py que todavía mencionaban la app Streamlit como si
+siguiera existiendo.
+
+COMPARACIÓN QUE MOTIVÓ LA DECISIÓN (para referencia futura): ambas
+apps compartían la misma lógica de negocio (mismos números y
+predicciones), pero Streamlit no tenía épocas configurables, ni
+"Entrenar todos", ni el botón Detener corregido, ni el rediseño
+visual; y su propio mecanismo de refresco (recargar toda la página
+cada 3 s con st.rerun()) era más disruptivo que el de la app FastAPI
+(que solo actualiza las partes que cambian).
+
+ESTADO ACTUAL: los 4 modelos están entrenados y evaluados con los
+presupuestos de épocas de la Fase 8; queda UNA sola app web (FastAPI +
+frontend propio en src/frontend/), con todas las mejoras de las Fases
+6, 8 y 9 (épocas configurables con límite visible, entrenar todos, log
+persistente, botón Detener corregido, rediseño minimalista) y probada
+de extremo a extremo con automatización real de navegador
+(Playwright/Chromium headless), no solo pruebas manuales. La
+instalación es un único "pip install -r requirements.txt", sin
+conflicto de protobuf. El proyecto está subido a GitHub:
 https://github.com/CesarEspa/Maestria
 
 
@@ -352,9 +519,11 @@ EarlyStopping sobre val_loss (restore_best_weights=True) y
 ReduceLROnPlateau. Métricas medidas sobre el conjunto de TEST
 (165 imágenes: 18 Benigno, 84 Maligno, 63 Normal), generadas por
 06_evaluate.py y 08_baseline_ml.py. Estos son los resultados FINALES,
-tras la segunda ronda de reentrenamiento descrita en la sección 3
-(Fase 5). Para el resultado original de la primera ronda (antes del
-diagnóstico y las correcciones), ver sección 5.2.
+tras la TERCERA ronda de reentrenamiento descrita en la sección 3
+(Fase 8 — mismos hiperparámetros que la Fase 5, pero con el
+presupuesto de épocas subido: 80->120 en las CNN, 15->25 y 50->100 en
+transfer learning). Para el resultado original de la primera ronda
+(antes del diagnóstico y las correcciones), ver sección 5.2.
 
 --------------------------------------------------------------------
 4.1 CNN Base (sin aumento de datos) — ARREGLADA POR COMPLETO
@@ -363,26 +532,34 @@ Arquitectura: 3 bloques Conv2D(32->64->128) + LayerNormalization +
 MaxPooling + Dropout, GlobalAveragePooling2D, Dense(256), Dense(3,
 softmax). ~321,250 parámetros. Learning rate 1e-4.
 Loss: CategoricalCrossentropy(label_smoothing=0.1) sobre etiquetas
-one-hot. EarlyStopping paciencia 12, hasta 80 épocas.
+one-hot. EarlyStopping paciencia 12, hasta 120 épocas (subido de 80 en
+la Fase 8).
 
-ÉPOCAS REALES: ~38 (de las 80 posibles; EarlyStopping cortó ahí porque
-val_loss dejó de mejorar 12 épocas seguidas). Cifra leída de
-outputs/figures/curvas_cnn_base.png, no de un registro exacto
-época-a-época — ver el incidente de la Fase 7 sobre por qué ese
-registro original ya no está disponible.
+ÉPOCAS REALES: 34 de 120 (mejor época: 22, val_accuracy 0.861,
+val_loss 0.5875 — de la época 23 a la 34, 12 seguidas sin mejorar,
+activó EarlyStopping). En la ronda anterior (techo de 80) había
+parado en ~38 según lectura visual de la curva; con el techo subido a
+120, en realidad terminó parando ANTES (34) porque encontró su mejor
+punto más pronto (época 22) — el techo de 80 no era su límite real.
 
-RESULTADO: el colapso de la primera ronda desapareció por completo.
+RESULTADO: el colapso de la primera ronda desapareció por completo, y
+esta tercera ronda mejoró aún más el resultado de la segunda.
 Convergencia normal, sin explosión de la pérdida de validación.
 
-Métricas en test: Exactitud 0.8485, AUC-ROC 0.9386, F1 macro 0.7305.
-Sensibilidad: Benigno 0.44, Maligno 0.99, Normal 0.78.
+Métricas en test: Exactitud 0.8667 (antes 0.8485), AUC-ROC 0.9449
+(antes 0.9386), F1 macro 0.7490 (antes 0.7305).
+Sensibilidad: Benigno 0.44 (igual), Maligno 0.99 (igual), Normal 0.83
+(antes 0.78).
 
 Esto CONFIRMA la hipótesis de causa raíz planteada en la primera
 ronda: el problema no era la arquitectura ni el dataset en
 sí, sino la combinación específica de BatchNormalization + pocos
 batches/época + learning rate alto. Al sustituir BatchNorm por
 LayerNorm (que no depende de estadísticas de batch) y bajar el
-learning rate, el mismo modelo converge con normalidad.
+learning rate, el mismo modelo converge con normalidad. Además, subir
+el presupuesto de épocas en la Fase 8 confirmó que el modelo SÍ
+estaba limitado por el techo de 80 de la segunda ronda: con más
+margen, EarlyStopping encontró un punto mejor.
 
 --------------------------------------------------------------------
 4.2 CNN + Augmentation — SOLO MEJORÓ PARCIALMENTE
@@ -393,19 +570,26 @@ reducido (RandomFlip horizontal, RandomRotation 0.08, RandomZoom
 RandomTranslation por no ser transformaciones anatómicamente
 plausibles/seguras para una TC de tórax).
 
-ÉPOCAS REALES: 14 (de las 80 posibles) — la cifra más baja de los 4
-modelos: EarlyStopping cortó casi de inmediato porque val_loss dejó de
-mejorar muy pronto, coherente con que este es el modelo que sigue
-colapsando a nivel de decisión final (ver más abajo).
+ÉPOCAS REALES: 13 de 120 (más rápido aún que los 14 de 80 de la ronda
+anterior) — la cifra más baja de los 4 modelos: su "mejor" época fue
+la propia época 1 (nunca volvió a bajar el val_loss inicial), así que
+EarlyStopping cortó en cuanto se cumplieron las 12 épocas de paciencia
+sin ninguna mejora. Con el TRIPLE de presupuesto disponible (120 en
+vez de 80), el modelo ni siquiera lo intentó más allá del arranque —
+confirma con más fuerza que el colapso no es un problema de
+presupuesto de épocas, es estructural.
 
-RESULTADO: mixto. El AUC-ROC mejoró sustancialmente (de 0.503 a
-0.728), pero la exactitud final (0.5091) sigue correspondiendo a un
-colapso: sensibilidad Benigno 0.00, Maligno 1.00, Normal 0.00 — el
-modelo predice "Maligno" para prácticamente todo el test, igual que
-en la primera ronda (que colapsaba hacia "Normal" en vez de
-"Maligno").
+RESULTADO: mixto, e IDÉNTICO a la ronda anterior. El AUC-ROC mejoró
+sustancialmente respecto a la primera ronda (de 0.503 a ~0.72), pero
+la exactitud final (0.5091) sigue correspondiendo a un colapso:
+sensibilidad Benigno 0.00, Maligno 1.00, Normal 0.00 — el modelo
+predice "Maligno" para prácticamente todo el test, igual que en la
+primera ronda (que colapsaba hacia "Normal" en vez de "Maligno") y
+que en la segunda ronda (números calcados: subir el presupuesto de
+épocas en la Fase 8 no cambió nada).
 
-Métricas en test: Exactitud 0.5091, AUC-ROC 0.7280, F1 macro 0.2249.
+Métricas en test (idénticas a la ronda anterior): Exactitud 0.5091,
+AUC-ROC 0.7233 (antes 0.7280, diferencia de ruido), F1 macro 0.2249.
 
 INTERPRETACIÓN (importante para el TFM): dado que la CNN Base —misma
 arquitectura, mismos hiperparámetros, sin augmentation— SÍ se
@@ -427,46 +611,69 @@ persiguió más allá de esta ronda: se documenta como hallazgo válido
 probablemente por el augmentation") en vez de seguir iterando.
 
 --------------------------------------------------------------------
-4.3 Transfer Learning (EfficientNetB0) — MEJORÓ AÚN MÁS
+4.3 Transfer Learning (EfficientNetB0) — MEJORÓ EN LA 2DA RONDA, EMPEORÓ EN LA 3RA
 --------------------------------------------------------------------
 EfficientNetB0 preentrenada en ImageNet + cabeza personalizada
 (GlobalAveragePooling2D, Dropout, Dense(256), Dropout, Dense(3,
 softmax)). Fase 1: base congelada, solo entrena la cabeza (learning
-rate 1e-4, hasta 15 épocas). Fase 2: fine-tuning de las ÚLTIMAS 50
-CAPAS de EfficientNet (antes 30) (learning rate 1e-5, hasta 50
-épocas, antes 30).
+rate 1e-4, hasta 25 épocas, subido de 15 en la Fase 8). Fase 2:
+fine-tuning de las ÚLTIMAS 50 CAPAS de EfficientNet (learning rate
+1e-5, hasta 100 épocas, subido de 50 en la Fase 8).
 
-ÉPOCAS REALES: Fase 1 paró en la época 9 de 15 (EarlyStopping). Fase 2
-usó las 50 épocas COMPLETAS de su presupuesto, sin activar el paro
-temprano — señal de que seguía mejorando lentamente hasta el final,
-candidato a un presupuesto aún mayor en trabajo futuro. Total: 59
-épocas efectivas (9 + 50).
+ÉPOCAS REALES (Fase 8, ronda actual): Fase 1 paró en la época 9 de 25
+(igual que antes con el techo de 15 — no estaba limitada por el
+presupuesto). Fase 2 llegó a la época 52 de 100 (mejor punto: época 40
+de la fase, val_accuracy 0.830, val_loss 0.499) — SÍ aprovechó el
+presupuesto extra (52 frente a 50 antes), pero el resultado en test
+fue peor, no mejor (ver más abajo). Total: 61 épocas efectivas (9+52).
 
-RESULTADO: mejoró en todas las métricas respecto a la primera ronda.
+RESULTADO SEGUNDA RONDA (histórico, techo 15+50): mejoró en todas las
+métricas respecto a la primera ronda. Exactitud 0.8303, AUC-ROC
+0.9761, F1 macro 0.7764, sensibilidad Benigno 0.89 (la mejora más
+notable, en la clase con menos datos), Maligno 0.87, Normal 0.76.
 
-Métricas en test: Exactitud 0.8303, AUC-ROC 0.9761, F1 macro 0.7764.
-Sensibilidad: Benigno 0.89 (antes 0.50 — la mejora más notable, en la
-clase con menos datos), Maligno 0.87, Normal 0.76.
+RESULTADO TERCERA RONDA (ACTUAL, techo 25+100): empeoró pese a usar
+más épocas reales. Exactitud 0.7939 (antes 0.8303), AUC-ROC 0.9563
+(antes 0.9761), F1 macro 0.7330 (antes 0.7764). Sensibilidad: Benigno
+0.83 (antes 0.89), Maligno 0.86 (antes 0.87), Normal 0.70 (antes
+0.76). Las métricas de VALIDACIÓN del punto que EarlyStopping eligió
+como mejor fueron similares o incluso mejores que las de la ronda
+anterior — la caída aparece solo al evaluar sobre TEST.
 
-Hipótesis: con más capas descongeladas y más épocas de fine-tuning,
-el modelo tiene más capacidad de adaptar las representaciones
-preentrenadas de ImageNet al dominio específico de TC de tórax, sin
-perder la estabilidad que le da partir de pesos preentrenados.
+INTERPRETACIÓN DEL EMPEORAMIENTO (importante, no es un error): con
+val y test de solo 165 imágenes cada uno, ambos conjuntos son pequeños
+y su composición concreta pesa más de lo ideal en las métricas.
+EarlyStopping elige el punto de parada según val_loss, no según test:
+cuando ambos splits son pequeños, "mejor en validación" no garantiza
+"mejor en test" en la misma proporción. Es evidencia práctica (no solo
+teórica) de que un único split fijo de este tamaño no basta para
+conclusiones robustas sobre qué modelo es mejor — refuerza la
+recomendación de validación cruzada (k-fold) en trabajo futuro
+(sección 7).
 
-¿CUÁL ES "EL MEJOR MODELO" AHORA? Ya no es una respuesta tan simple
-como en la primera ronda:
-  - CNN Base tiene la exactitud MÁS ALTA (84.85% vs 83.03%).
-  - Transfer Learning tiene mejor AUC-ROC (0.976 vs 0.939), mejor F1
-    macro (0.776 vs 0.730), y sobre todo sensibilidad mucho más
-    equilibrada entre clases, incluida la minoritaria Benigno (0.89
-    vs 0.44).
-  - En un problema médico, la sensibilidad equilibrada por clase
-    (detectar bien TODAS las categorías, no solo la mayoritaria)
-    pesa más que un punto extra de exactitud global. RECOMENDACIÓN:
-    seguir señalando Transfer Learning como el modelo principal del
-    TFM, pero mencionar a la CNN Base (ya arreglada) como resultado
-    secundario relevante — demuestra que el diagnóstico de la
-    primera ronda era correcto.
+Hipótesis sin descartar del todo: con más capas descongeladas y más
+épocas de fine-tuning, el modelo tiene más capacidad de adaptar las
+representaciones preentrenadas de ImageNet al dominio específico de TC
+de tórax — pero eso no evitó, en esta ronda, que el punto elegido por
+EarlyStopping generalizara peor al test.
+
+¿CUÁL ES "EL MEJOR MODELO" AHORA? Con los números de la tercera ronda,
+es una decisión más reñida que antes:
+  - CNN Base tiene ahora la exactitud MÁS ALTA (86.67% vs 79.39%) Y el
+    F1 macro más alto (0.749 vs 0.733) — se invirtió respecto a la
+    segunda ronda, donde Transfer Learning ganaba en F1.
+  - Transfer Learning conserva el AUC-ROC más alto (0.956 vs 0.945) y,
+    sobre todo, sensibilidad mucho más equilibrada entre clases,
+    incluida la minoritaria Benigno (0.83 vs 0.44 de CNN Base — CNN
+    Base SIGUE sin detectar más de la mitad de los casos benignos,
+    pese a su mejor exactitud global).
+  - En un problema médico, ese desequilibrio de sensibilidad pesa más
+    que un punto de exactitud. RECOMENDACIÓN: Transfer Learning sigue
+    siendo el modelo principal recomendado por motivos clínicos, pero
+    la diferencia con CNN Base ya no es tan clara como en la segunda
+    ronda — ambos resultados (el que mejoró y el que empeoró) se
+    reportan tal cual en el TFM, es un hallazgo legítimo sobre las
+    limitaciones de evaluar con datasets pequeños, no algo a ocultar.
 
 --------------------------------------------------------------------
 4.4 SVM (HOG) — Línea base de ML clásico — SIN CAMBIOS (no se tocó)
@@ -474,7 +681,11 @@ como en la primera ronda:
 Extracción de características HOG (9 orientaciones, celdas 16x16,
 bloques 2x2) sobre la imagen en escala de grises, + SVM kernel RBF
 con class_weight="balanced"). Por instrucción explícita del usuario,
-este modelo NO se reentrenó ni se modificó en la segunda ronda.
+este modelo NO se reentrenó ni se modificó en la segunda ronda. En la
+Fase 8 (tercera ronda) sí se volvió a ejecutar por completo (para
+tener los 4 modelos frescos), pero al ser un método determinista, sin
+concepto de épocas, produjo un archivo .joblib byte a byte idéntico
+al anterior — mismo resultado, sin cambios.
 
 ÉPOCAS: no aplica. Un SVM no se entrena por descenso de gradiente
 iterativo por épocas — resuelve un problema de optimización convexa
@@ -500,13 +711,21 @@ CNN". La comparación correcta, imposible de hacer con los datos
 disponibles, requeriría un split a nivel de paciente.
 
 --------------------------------------------------------------------
-4.5 Tabla resumen (resultados FINALES, segunda ronda)
+4.5 Tabla resumen (resultados FINALES, tercera ronda — Fase 8)
 --------------------------------------------------------------------
 Modelo                     Exactitud  AUC-ROC  F1 Macro  Sens.Benigno Sens.Maligno Sens.Normal
-CNN Base (arreglada)         0.8485    0.9386   0.7305    0.44         0.99         0.78
-CNN + Augmentation (parcial) 0.5091    0.7280   0.2249    0.00         1.00         0.00   <- sigue colapsada
-Transfer Learning (EffNet)   0.8303    0.9761   0.7764    0.89         0.87         0.76   <- modelo recomendado
+CNN Base (arreglada)         0.8667    0.9449   0.7490    0.44         0.99         0.83
+CNN + Augmentation (colapsa) 0.5091    0.7233   0.2249    0.00         1.00         0.00   <- idéntica a la 2da ronda
+Transfer Learning (EffNet)   0.7939    0.9563   0.7330    0.83         0.86         0.70   <- bajó vs 2da ronda, recomendado igual
 SVM (HOG) linea base         1.0000    1.0000   1.0000    1.00         1.00         1.00   <- sospechoso de leakage, sin cambios
+
+Comparación con la segunda ronda (techo de épocas 80/50, sección 4 de
+versiones anteriores de este documento):
+Modelo                     Exactitud 2da  Exactitud 3ra  Cambio
+CNN Base                     0.8485         0.8667        MEJORÓ
+CNN + Augmentation            0.5091         0.5091        IGUAL (colapso idéntico)
+Transfer Learning             0.8303         0.7939        EMPEORÓ (ver 4.3 para el porqué)
+SVM (HOG)                     1.0000         1.0000        IGUAL (determinista)
 
 Figuras nuevas generadas en esta ronda (en outputs/figures/):
   - curvas_roc_comparativas.png: las 4 curvas ROC macro-average
@@ -641,6 +860,13 @@ el handle para el proceso hijo).
     protobuf==4.25.9" como tercer paso. En la práctica esa versión de
     protobuf funciona bien en tiempo de ejecución con ambas librerías
     pese al conflicto declarado en sus metadatos.
+    RESUELTO DEL TODO EN LA FASE 9: al eliminar la app Streamlit (la
+    única que exigía protobuf>=5 — confirmado con "pip show protobuf",
+    que lista streamlit como el único paquete instalado que lo exige),
+    el conflicto desapareció por completo. Ya no hace falta el pin
+    manual ni los 3 pasos separados: un solo requirements.txt con
+    tensorflow+fastapi+uvicorn se instala en un solo comando, sin
+    avisos de conflicto, verificado en un venv nuevo.
   - Nombre de archivo con doble guion bajo (bug cosmético) en
     06_evaluate.py al generar el nombre del archivo de la matriz de
     confusión de "CNN + Augmentation"; corregido.
@@ -712,7 +938,11 @@ el handle para el proceso hijo).
   - Configurar soporte de GPU real (WSL2 o DirectML) para poder
     iterar más rápido sobre estas hipótesis (ver limitación 5).
   - Validación cruzada (k-fold) en vez de un único split, dado el
-    tamaño reducido del dataset.
+    tamaño reducido del dataset — la Fase 8 (tercera ronda) ya dio
+    evidencia directa de esta necesidad: Transfer Learning bajó de
+    exactitud en test pese a mejores métricas de validación, señal de
+    que un único split de 165+165 imágenes no es suficientemente
+    estable para conclusiones robustas sobre "cuál modelo es mejor".
   - Evaluar en un conjunto externo (otro hospital/dataset público)
     para medir generalización real.
   - Explorar arquitecturas 3D que aprovechen la información
@@ -720,10 +950,12 @@ el handle para el proceso hijo).
     2D de forma independiente.
   - Mejorar la explicabilidad: probar Grad-CAM++ u otras variantes
     menos sensibles a canales de activación atípica (ver 5.3).
-  - Llevar a la app Streamlit los controles añadidos en la Fase 6 a la
-    app FastAPI (elegir número de épocas, botón "Entrenar todos los
-    modelos"), para que ambas interfaces vuelvan a tener paridad
-    completa de funciones.
+  - La app Streamlit se eliminó en la Fase 9 por quedar redundante
+    frente a la de FastAPI (ver esa sección para el detalle). Si en
+    algún momento hiciera falta una segunda interfaz más simple,
+    evaluar reconstruirla — pero manteniendo una sola interfaz como
+    fuente de verdad, para no repetir la divergencia que llevó a
+    eliminar la anterior.
 
 
 ====================================================================
@@ -742,7 +974,7 @@ el handle para el proceso hijo).
                              disco (.keras y .joblib).
   README.md                  Documentación técnica completa: cómo
                              instalar, ejecutar el pipeline y usar
-                             las 2 apps web, con la misma tabla de
+                             la app web, con la misma tabla de
                              resultados y el mismo análisis de
                              hallazgos que este archivo.
 
@@ -751,5 +983,11 @@ sección 4 de este archivo (con las 4 tablas/análisis por modelo) es
 el material base directo. Para Metodología, usar la sección 3
 (pipeline) y las arquitecturas descritas en 4.1-4.4. Para
 Limitaciones, usar la sección 6 tal cual. Para Conclusiones, la
-sección 7 más el hallazgo central de que transfer learning fue
-claramente superior a entrenar desde cero en este dataset pequeño.
+sección 7 más el hallazgo central de la tercera ronda (Fase 8): la
+comparación entre entrenar desde cero (CNN Base) y transfer learning
+ya NO es unilateral — CNN Base tiene ahora mejor exactitud y F1 macro,
+pero Transfer Learning mantiene mejor AUC-ROC y una sensibilidad mucho
+más equilibrada entre clases (crucial en un problema médico). Esa
+mezcla de resultados, incluido el que empeoró (Transfer Learning en la
+Fase 8), es en sí misma una conclusión metodológica válida sobre las
+limitaciones de evaluar con datasets pequeños de imagen médica.

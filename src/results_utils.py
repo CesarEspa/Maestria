@@ -1,7 +1,5 @@
 """
-Carga de métricas y figuras de evaluación, compartida por la app Streamlit
-y el backend FastAPI, para que ambas muestren exactamente los mismos números
-y no diverjan.
+Carga de métricas y figuras de evaluación para el backend FastAPI.
 """
 import json
 

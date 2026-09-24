@@ -18,7 +18,7 @@ Autor: César Libardo España Salguero
 3. [Estructura del proyecto](#estructura-del-proyecto)
 4. [Instalación](#instalación)
 5. [Cómo ejecutar el pipeline](#cómo-ejecutar-el-pipeline)
-6. [Apps web interactivas](#apps-web-interactivas)
+6. [App web interactiva](#app-web-interactiva)
 7. [Metodología](#metodología)
 8. [Resultados](#resultados)
 9. [Hallazgos y análisis](#hallazgos-y-análisis)
@@ -95,14 +95,13 @@ tfm-lung-cancer/
 │   ├── 06_evaluate.py            # Evaluación comparativa de los 3 modelos Keras en test
 │   ├── 07_gradcam.py             # Mapas Grad-CAM sobre el mejor modelo
 │   ├── 08_baseline_ml.py         # Línea base clásica: HOG + SVM
-│   ├── progress_tracker.py       # Callback de Keras que registra progreso para las apps web
+│   ├── progress_tracker.py       # Callback de Keras que registra progreso para la app web
 │   ├── gradcam_utils.py          # Funciones Grad-CAM compartidas
 │   ├── model_utils.py            # Preprocesamiento e inferencia compartidos
 │   ├── results_utils.py          # Carga de métricas/figuras compartida
-│   ├── training_control.py       # Lanzar/detener entrenamientos, estado — compartido
-│   ├── app.py                    # App web #1 (Streamlit): entrenar, monitorear, clasificar
-│   ├── api.py                    # App web #2: backend FastAPI (API REST)
-│   └── frontend/                 # App web #2: frontend HTML/CSS/JS servido por api.py
+│   ├── training_control.py       # Lanzar/detener entrenamientos, estado
+│   ├── api.py                    # Backend FastAPI (API REST)
+│   └── frontend/                 # Frontend HTML/CSS/JS servido por api.py
 │       ├── index.html
 │       ├── style.css
 │       └── app.js
@@ -112,8 +111,7 @@ tfm-lung-cancer/
 │   ├── gradcam/                  # Imágenes Grad-CAM
 │   ├── splits/                   # dataset_splits.npz (arrays preprocesados)
 │   └── progress/                 # Estado de entrenamiento en vivo (JSON) + logs
-├── requirements.txt               # Dependencias del pipeline (TensorFlow, etc.)
-├── requirements-web.txt           # Dependencias extra de las apps web (Streamlit, FastAPI)
+├── requirements.txt               # Todas las dependencias (pipeline + backend web)
 ├── PROYECTO_CLAUDE_CONTEXTO.txt    # Contexto completo del proyecto (para IA/documentación)
 └── README.md
 ```
@@ -128,31 +126,22 @@ venv\Scripts\activate
 # Mac/Linux:
 source venv/bin/activate
 
-# Los tres comandos van EN ESTE ORDEN, cada uno por separado (ver nota
-# sobre protobuf más abajo — no se pueden combinar en un solo comando):
 pip install -r requirements.txt
-pip install -r requirements-web.txt
-pip install "protobuf==4.25.9"
 ```
 
-Esta secuencia de 3 pasos está validada: se probó instalando desde cero en
-un entorno virtual nuevo (sin nada preinstalado) y funciona de punta a
-punta, incluyendo lanzar la app web y comprobar que reconoce los modelos
-ya entrenados.
+Un único comando, verificado de extremo a extremo en un entorno virtual
+nuevo (sin nada preinstalado): instala TensorFlow, el resto del pipeline y
+el backend FastAPI juntos, sin conflictos de dependencias.
 
-**¿Por qué 3 comandos separados y no uno solo?** `requirements.txt`
-(TensorFlow y el resto del pipeline) y `requirements-web.txt` (Streamlit,
-FastAPI) tienen requisitos de `protobuf` mutuamente excluyentes en sus
-propios metadatos: TensorFlow exige `protobuf<5` y Streamlit exige
-`protobuf>=5.26.1`. Si se listan ambos archivos en un único comando
-`pip install`, el resolvedor de dependencias de pip falla de inmediato con
-`ResolutionImpossible` — es una limitación real de pip (que sí valida
-conflictos entre paquetes de una misma invocación), no un error de estos
-archivos. Instalándolos en **invocaciones separadas**, pip resuelve cada
-uno de forma independiente (solo avisa, sin bloquear, si el resultado
-final no es 100% coherente) y el último paso fuerza la versión de
-protobuf que en la práctica funciona bien en tiempo de ejecución con
-ambas librerías pese al conflicto declarado en sus metadatos.
+> El proyecto tuvo antes una segunda app en Streamlit además de la de
+> FastAPI. Streamlit exige `protobuf>=5.26.1`, incompatible con el
+> `protobuf<5` que exige TensorFlow, lo que obligaba a instalar en 3 pasos
+> separados con un pin manual de `protobuf`. Al eliminar esa app por quedar
+> redundante frente a la de FastAPI (ver
+> [Trabajo futuro](#trabajo-futuro)), ese conflicto desapareció por
+> completo — confirmado revisando qué paquete instalado exige cada versión
+> de `protobuf` (`pip show protobuf`): solo Streamlit pedía `>=5`, ni
+> FastAPI ni uvicorn tienen ninguna dependencia de `protobuf`.
 
 **Notas para Windows:**
 
@@ -190,9 +179,9 @@ export PYTHONIOENCODING=utf-8   # o $env:PYTHONIOENCODING="utf-8" en PowerShell
 
 python 01_eda.py                # Análisis exploratorio → outputs/figures/
 python 02_preprocessing.py      # Split 70/15/15 → outputs/splits/dataset_splits.npz
-python 03_train_cnn_base.py     # ~40-60 min en CPU (hasta 80 épocas, paciencia 12)
-python 04_train_cnn_aug.py      # ~50-80 min en CPU (hasta 80 épocas, paciencia 12)
-python 05_train_transfer.py     # ~20-35 min en CPU (2 fases, hasta 15+50 épocas)
+python 03_train_cnn_base.py     # ~35-50 min en CPU (hasta 120 épocas, paciencia 12)
+python 04_train_cnn_aug.py      # ~15-25 min en CPU (para pronto: colapsa en ~13 épocas, ver Hallazgos)
+python 05_train_transfer.py     # ~20-30 min en CPU (2 fases, hasta 25+100 épocas)
 python 06_evaluate.py           # Evaluación comparativa en test
 python 07_gradcam.py            # Mapas de activación del mejor modelo
 python 08_baseline_ml.py        # Línea base SVM + HOG (~1-2 min)
@@ -202,31 +191,10 @@ Cada script guarda sus resultados (figuras, modelos, métricas) en `outputs/`.
 Los scripts 03, 04, 05 y 08 también actualizan `outputs/progress/<modelo>.json`
 en vivo, que consume la app web descrita a continuación.
 
-## Apps web interactivas
+## App web interactiva
 
-El proyecto incluye **dos** interfaces web equivalentes en funcionalidad,
-para no depender únicamente de la terminal. Ambas comparten la misma lógica
-de negocio (`training_control.py`, `model_utils.py`, `gradcam_utils.py`,
-`results_utils.py`, `progress_tracker.py`), así que se comportan igual y
-muestran siempre los mismos números — solo cambia la interfaz.
-
-### Opción 1 — Streamlit (`src/app.py`)
-
-La más rápida de lanzar, pensada como herramienta interna:
-
-```bash
-cd src
-streamlit run app.py
-```
-
-Se abre en `http://localhost:8501` con 4 secciones (Inicio, Entrenamiento,
-Clasificar imagen, Resultados comparativos) — ver el detalle de cada una
-más abajo, es el mismo para las dos apps.
-
-### Opción 2 — Frontend propio + backend FastAPI (`src/api.py` + `src/frontend/`)
-
-Una interfaz visual más cuidada (HTML/CSS/JS propio, sin dependencias de
-build) sobre una **API REST** separada del frontend:
+Un frontend propio (HTML/CSS/JS, sin dependencias de build) sobre una
+**API REST** hecha con FastAPI, para no depender únicamente de la terminal:
 
 ```bash
 cd src
@@ -239,14 +207,21 @@ queda disponible bajo `http://localhost:8000/api/...` (ver `/docs` para la
 documentación interactiva autogenerada por FastAPI) y puede consumirse desde
 cualquier otro cliente, no solo desde este frontend.
 
-Esta opción se separó deliberadamente en frontend + backend (en vez de
-todo-en-uno como hace Streamlit) para poder crecer más adelante sin
-reescribir nada: añadir autenticación, guardar un historial de
-clasificaciones en una base de datos, desplegar el backend en un servidor
-real y servir el frontend aparte (p. ej. como SPA), etc. El backend actual
-es deliberadamente ligero (sin base de datos, sin autenticación, pensado
-para un único usuario en local) — es el punto de partida sobre el que
-construir esas extensiones, no una versión final.
+Se separó deliberadamente en frontend + backend (en vez de todo-en-uno) para
+poder crecer más adelante sin reescribir nada: añadir autenticación, guardar
+un historial de clasificaciones en una base de datos, desplegar el backend
+en un servidor real y servir el frontend aparte (p. ej. como SPA), etc. El
+backend actual es deliberadamente ligero (sin base de datos, sin
+autenticación, pensado para un único usuario en local) — es el punto de
+partida sobre el que construir esas extensiones, no una versión final.
+
+> El proyecto tuvo antes una segunda interfaz hecha en Streamlit
+> (`src/app.py`), pensada como prototipo rápido inicial. Se eliminó porque
+> con el tiempo la versión FastAPI acumuló funciones que Streamlit nunca
+> tuvo (épocas configurables, "Entrenar todos", corrección del botón
+> Detener, rediseño visual) y mantener las dos duplicaba trabajo sin
+> aportar nada distinto — ver [Trabajo futuro](#trabajo-futuro) si se
+> quisiera reconstruir esa opción más adelante.
 
 **Endpoints principales de la API:**
 
@@ -262,7 +237,7 @@ construir esas extensiones, no una versión final.
 | GET | `/api/results` | Métricas comparativas de los 4 modelos + alerta de fuga de datos |
 | GET | `/api/figures`, `/api/gradcam_grid` | Figuras de evaluación y grid Grad-CAM |
 
-### Qué ofrecen ambas interfaces
+### Qué ofrece la app
 
 1. **Inicio** — resumen del proyecto, estado de los 4 modelos y el aviso
    sobre la limitación de fuga de datos.
@@ -273,22 +248,19 @@ construir esas extensiones, no una versión final.
    - curvas de *loss*/*accuracy* de entrenamiento y validación, actualizadas
      cada pocos segundos,
    - el log completo del proceso (sin códigos de color ANSI, limpiado para
-     que sea legible), y un botón para detenerlo si es necesario — el
-     estado se refleja como "Detenido" en cuanto el proceso muere de
-     verdad, en vez de tardar hasta 5 minutos en notarse.
+     que sea legible, y que permanece desplegado aunque la página se
+     refresque sola), y un botón para detenerlo si es necesario — el estado
+     se refleja como "Detenido" en cuanto el proceso muere de verdad, en vez
+     de tardar hasta 5 minutos en notarse,
+   - un campo para elegir manualmente el **número de épocas** antes de
+     lanzar cada modelo Keras (con el máximo permitido siempre visible, y
+     con cuántas épocas quedó entrenado el modelo actual),
+   - un botón **"Entrenar todos los modelos"** que los lanza en cola
+     secuencial, uno detrás de otro, para no hacerlos competir por la
+     misma CPU.
    Cada entrenamiento se lanza como un **subproceso independiente**: sigue
    corriendo aunque cierres el navegador, y la app simplemente vuelve a leer
    su archivo de progreso al reabrirla.
-
-   *Solo en la versión FastAPI + frontend propio (Opción 2)*: un campo para
-   elegir manualmente el **número de épocas** antes de lanzar cada modelo
-   Keras (en vez del valor fijo de `config.py`); un botón **"Entrenar todos
-   los modelos"** que los lanza en cola secuencial, uno detrás de otro, para
-   no hacerlos competir por la misma CPU; y el panel "Ver log del proceso"
-   permanece desplegado (y se sigue actualizando) aunque la página se
-   refresque sola cada pocos segundos — antes se cerraba en cada refresco.
-   Llevar estos mismos controles a la app Streamlit queda como pendiente,
-   ver [Trabajo futuro](#trabajo-futuro).
 3. **Clasificar imagen** — sube tu propia imagen de TC (o elige una de
    ejemplo del propio dataset) y dile a la app con qué modelo entrenado
    quieres clasificarla. Muestra la clase predicha, la confianza, la
@@ -323,7 +295,7 @@ construir esas extensiones, no una versión final.
 |---|---|---|
 | **CNN Base** | 3 bloques Conv2D(32→64→128) + **LayerNorm** + MaxPooling + GAP + Dense(256) | Sin aumento de datos. `CategoricalCrossentropy(label_smoothing=0.1)` |
 | **CNN + Augmentation** | Misma arquitectura | Augmentation reducido: flip horizontal, rotación ±0.08, zoom ±0.05, contraste (sin flip vertical ni traslación) |
-| **Transfer Learning** | EfficientNetB0 preentrenada en ImageNet + cabeza personalizada | Fase 1: base congelada (hasta 15 épocas). Fase 2: fine-tuning de las **últimas 50 capas** (hasta 50 épocas) |
+| **Transfer Learning** | EfficientNetB0 preentrenada en ImageNet + cabeza personalizada | Fase 1: base congelada (hasta 25 épocas). Fase 2: fine-tuning de las **últimas 50 capas** (hasta 100 épocas) |
 | **SVM (línea base)** | HOG (9 orientaciones, celdas 16×16) + SVM kernel RBF | Método clásico de ML, sin deep learning — sin cambios entre rondas |
 
 Todos los modelos de Keras usan `class_weight="balanced"` para compensar el
@@ -335,42 +307,46 @@ desbalance de clases, `EarlyStopping` (paciencia 12) sobre `val_loss` y
 
 ### ¿Por qué no todos entrenaron el mismo número de épocas?
 
-Las cifras de "hasta 80" o "hasta 50" épocas en la tabla anterior son
+Las cifras de "hasta 120" o "hasta 100" épocas en la tabla anterior son
 **presupuestos máximos, no el número real de épocas que corrió cada
 modelo**. `EarlyStopping` (paciencia 12: se detiene si `val_loss` no
 mejora durante 12 épocas seguidas, restaurando los pesos de la mejor
 época) corta el entrenamiento en cuanto cada modelo deja de mejorar, y
 ese punto depende de la arquitectura y de si parte de pesos
-preentrenados o no — por eso cada uno se detuvo en un número distinto:
+preentrenados o no — por eso cada uno se detuvo en un número distinto.
+Estas cifras son de la **tercera ronda de entrenamiento**, tras subir
+los presupuestos (80→120 en las CNN, 15→25 y 50→100 en transfer
+learning) para comprobar si algún modelo seguía limitado por el techo
+anterior:
 
-| Modelo | Presupuesto máximo | Épocas reales completadas |
-|---|---:|---:|
-| CNN Base | 80 | ≈ 38 (lectura de `curvas_cnn_base.png`; el registro época a época de esta ejecución concreta ya no está disponible, ver nota abajo) |
-| CNN + Augmentation | 80 | 14 |
-| Transfer Learning — Fase 1 (cabeza congelada) | 15 | 9 |
-| Transfer Learning — Fase 2 (fine-tuning) | 50 | 50 (completó todo el presupuesto, sin activar el paro temprano) |
-| SVM (HOG) | no aplica | no usa épocas — es un SVM clásico, converge con una sola llamada `.fit()`, no con descenso de gradiente iterativo |
+| Modelo | Presupuesto máximo | Épocas reales completadas | Mejor época (menor `val_loss`) |
+|---|---:|---:|---:|
+| CNN Base | 120 | 34 | 22 (val_accuracy 0.861) |
+| CNN + Augmentation | 120 | 13 | 1 (nunca volvió a mejorar) |
+| Transfer Learning — Fase 1 (cabeza congelada) | 25 | 9 | — |
+| Transfer Learning — Fase 2 (fine-tuning) | 100 | 52 | época 40 de la fase (val_accuracy 0.830) |
+| SVM (HOG) | no aplica | no usa épocas — es un SVM clásico, converge con una sola llamada `.fit()`, no con descenso de gradiente iterativo | — |
 
-La CNN + Augmentation es la que menos épocas aguantó (14): es
-justamente el modelo que sigue colapsando a nivel de decisión final
-(ver [Hallazgo #3](#hallazgos-y-análisis)), así que `val_loss` deja de
-mejorar muy pronto. La Fase 2 de Transfer Learning, en cambio, agotó
-las 50 épocas completas sin activar el paro temprano — señal de que
-seguía mejorando lentamente hasta el final del presupuesto, y quizás
-se beneficiaría de un presupuesto aún mayor (ver
-[Trabajo futuro](#trabajo-futuro)).
+**Lo que reveló subir el presupuesto (comparando con la ronda
+anterior, de 80/50 épocas):**
 
-> Nota sobre la cifra de CNN Base: el 23/09/2026 se relanzó por
-> accidente un reentrenamiento de este modelo desde la app web (con el
-> mismo presupuesto por defecto de 80 épocas), que sobrescribió
-> temporalmente el archivo del modelo y su curva de entrenamiento con
-> una ejecución que sí colapsó (paró en la época 14, igual que el
-> patrón del Hallazgo #1). Se detectó por el desajuste con las
-> métricas ya evaluadas y se restauró el modelo bueno (84.85% de
-> exactitud) desde el historial de git — el archivo `.keras` actual es
-> el correcto, pero el número exacto de épocas de esa ejecución
-> original ya no puede leerse de un JSON, solo estimarse visualmente
-> de la curva restaurada.
+- **CNN Base mejoró de verdad**: con más margen, `EarlyStopping`
+  encontró un mejor punto (época 22 en vez de cortar antes por falta
+  de presupuesto), y la exactitud en test subió de 84.85% a **86.67%**.
+  El modelo SÍ estaba limitado por el techo anterior.
+- **CNN + Augmentation no mejoró — y paró aún antes** (época 13 en vez
+  de 14, con su "mejor" punto siendo la propia época 1). Confirma con
+  más fuerza la conclusión del [Hallazgo #3](#hallazgos-y-análisis):
+  el colapso de este modelo no es un problema de presupuesto de
+  épocas, es intrínseco a la combinación de augmentation + dataset
+  pequeño.
+- **Transfer Learning, sorprendentemente, empeoró en test** (83.03% →
+  **79.39%**) pese a que la fase 2 sí aprovechó el presupuesto extra
+  (52 épocas en vez de 50) y sus métricas de *validación* fueron
+  similares o mejores. Ver el análisis completo en el
+  [Hallazgo #7](#hallazgos-y-análisis) — es un hallazgo instructivo
+  sobre la varianza entre validación y test en datasets pequeños, no
+  un error.
 
 ## Resultados
 
@@ -379,35 +355,44 @@ se beneficiaría de un presupuesto aún mayor (ver
 y `08_baseline_ml.py`. Valores medidos sobre el conjunto de **test**, 165
 imágenes.)*
 
-**Segunda ronda de entrenamiento** (LayerNormalization en vez de
-BatchNormalization, learning rate 1e-4, label smoothing 0.1, patience 12,
-hasta 80/50 épocas, augmentation reducido en la CNN+Aug, y fine-tuning de
-las últimas 50 capas en vez de 30 en transfer learning — ver
-[Hallazgos](#hallazgos-y-análisis) para el detalle de cada cambio y su
-efecto). Se entrenó íntegramente en CPU: no había soporte de GPU disponible
-en la instalación de TensorFlow del equipo (ver nota en
-[Instalación](#instalación)).
+**Tercera ronda de entrenamiento** (misma arquitectura e hiperparámetros
+que la segunda ronda — LayerNormalization, learning rate 1e-4, label
+smoothing 0.1, patience 12 — pero con el presupuesto de épocas subido de
+80/50 a 120/100, y la fase 1 de transfer learning de 15 a 25, para
+comprobar si algún modelo seguía limitado por el techo anterior; ver
+[¿Por qué no todos entrenaron el mismo número de épocas?](#por-qué-no-todos-entrenaron-el-mismo-número-de-épocas)
+y [Hallazgo #7](#hallazgos-y-análisis) para el detalle). Se entrenó
+íntegramente en CPU: no había soporte de GPU disponible en la instalación
+de TensorFlow del equipo (ver nota en [Instalación](#instalación)).
 
 | Modelo | Exactitud | AUC-ROC | F1 Macro | Sensib. Benigno | Sensib. Maligno | Sensib. Normal |
 |---|---:|---:|---:|---:|---:|---:|
-| **CNN Base** | **0.8485** | 0.9386 | 0.7305 | 0.44 | 0.99 | 0.78 |
-| CNN + Augmentation | 0.5091 ⚠️ | 0.7280 | 0.2249 | 0.00 | 1.00 | 0.00 |
-| **Transfer Learning (EfficientNetB0)** | 0.8303 | **0.9761** | **0.7764** | **0.89** | 0.87 | 0.76 |
+| **CNN Base** | **0.8667** | 0.9449 | **0.7490** | 0.44 | 0.99 | 0.83 |
+| CNN + Augmentation | 0.5091 ⚠️ | 0.7233 | 0.2249 | 0.00 | 1.00 | 0.00 |
+| **Transfer Learning (EfficientNetB0)** | 0.7939 | **0.9563** | 0.7330 | **0.83** | 0.86 | 0.70 |
 | SVM (HOG) — Línea base | 1.0000 ⚠️ | 1.0000 ⚠️ | 1.0000 ⚠️ | 1.00 | 1.00 | 1.00 |
 
 ⚠️ Los resultados perfectos de la SVM siguen sin ser creíbles (fuga de datos,
-sin cambios — no se retocó ese modelo). La CNN + Augmentation mejoró su
-AUC-ROC pero sigue colapsando a nivel de predicción final (ver Hallazgos).
+sin cambios — no se retocó ese modelo). La CNN + Augmentation sigue
+colapsando a nivel de predicción final, exactamente igual que en la ronda
+anterior (ver Hallazgos).
 
-**¿Cuál es "el mejor" ahora?** Depende del criterio: la **CNN Base** tiene
-la exactitud global más alta (84.85%), pero la **Transfer Learning** tiene
-mejor AUC-ROC (0.976), mejor F1 macro, y sobre todo una sensibilidad mucho
-más equilibrada entre clases — incluida la clase minoritaria Benigno
-(0.89, frente a 0.44 de la CNN Base). En un problema médico, esa
-sensibilidad equilibrada por clase pesa más que un punto extra de
-exactitud global, así que **Transfer Learning sigue siendo el modelo
-recomendado**, aunque ahora con una CNN Base mucho más competitiva de lo
-que era en la primera ronda.
+**¿Cuál es "el mejor" ahora? Es una decisión más reñida que antes.** Con
+más presupuesto de épocas, la **CNN Base** mejoró en todo (86.67% de
+exactitud, el F1 macro más alto de los 3 modelos creíbles) y la
+**Transfer Learning** bajó en exactitud, F1 y sensibilidad frente a la
+ronda anterior — ver el porqué en el
+[Hallazgo #7](#hallazgos-y-análisis). Aun así, Transfer Learning
+conserva el **AUC-ROC más alto** y, sobre todo, una sensibilidad mucho
+más equilibrada entre clases: detecta el 83% de los casos Benigno frente
+a solo el 44% de la CNN Base — es decir, la CNN Base **sigue sin
+detectar más de la mitad de los casos benignos**, pese a tener mejor
+exactitud global. En un problema médico, ese desequilibrio pesa más que
+un punto de exactitud, así que **Transfer Learning sigue siendo el
+modelo recomendado por motivos clínicos**, aunque la diferencia con la
+CNN Base ya no es tan clara como antes — ambos números cuentan una
+historia honesta que vale la pena presentar tal cual en el TFM, en vez
+de forzar un único "ganador".
 
 Figuras nuevas de esta ronda: `curvas_roc_comparativas.png` (las 4 curvas
 ROC macro-average superpuestas) y `classification_report_<modelo>.png`
@@ -594,6 +579,73 @@ punto de entrenamiento concreto del modelo, sino de una propiedad más
 estructural de cómo EfficientNetB0 representa la información en su última
 capa convolucional.
 
+**Verificación tras la tercera ronda:** se regeneró el grid una vez más
+con el modelo de transfer learning de esta ronda (79.4% de exactitud) y
+**el mismo patrón persiste sin ningún cambio** — el punto caliente sigue
+siempre en la misma esquina, para las 9 imágenes de ejemplo, sin importar
+la clase predicha. Tres modelos de transfer learning distintos (misma
+arquitectura, pesos distintos) muestran exactamente el mismo artefacto,
+lo que descarta definitivamente que sea una casualidad de un
+entrenamiento concreto.
+
+### 7. Tercera ronda: subir el presupuesto de épocas ayudó a un modelo, no a otro, y empeoró el tercero
+
+Tras confirmar que la Fase 2 de Transfer Learning había agotado su
+presupuesto de 50 épocas sin activar `EarlyStopping` (ver
+[¿Por qué no todos entrenaron el mismo número de épocas?](#por-qué-no-todos-entrenaron-el-mismo-número-de-épocas)),
+se subieron los presupuestos máximos (CNN base/aug: 80→120; transfer
+learning fase 1: 15→25, fase 2: 50→100) y se reentrenaron los 4 modelos
+con los mismos hiperparámetros de la segunda ronda, sin tocar nada más.
+El resultado fue desigual entre los tres modelos de Keras:
+
+- **CNN Base mejoró de verdad** (84.85% → **86.67%** de exactitud,
+  AUC-ROC 0.939 → 0.945, F1 macro 0.730 → 0.749): con más margen,
+  `EarlyStopping` encontró un mejor punto de convergencia (época 22 de
+  34 completadas, frente a un corte más temprano por falta de
+  presupuesto en la ronda anterior). Confirma que este modelo sí estaba
+  limitado por el techo de 80 épocas.
+- **CNN + Augmentation no mejoró — y paró todavía antes** (13 épocas en
+  vez de 14, con su "mejor" punto siendo la propia época 1: nunca
+  volvió a bajar su `val_loss` inicial). La exactitud final (50.9%) es
+  **idéntica** a la ronda anterior porque el modelo colapsa exactamente
+  igual, prediciendo "Maligno" para casi todo el conjunto de test. Esto
+  **descarta con más fuerza todavía** la hipótesis de que el colapso
+  fuera un problema de presupuesto: con el triple de épocas disponibles,
+  el modelo ni siquiera lo intenta más allá de la primera época.
+- **Transfer Learning, en cambio, empeoró en el conjunto de test**
+  (83.03% → **79.39%** de exactitud, AUC-ROC 0.976 → 0.956, F1 macro
+  0.776 → 0.733; sensibilidad Benigno 0.89 → 0.83), pese a que la fase 2
+  sí usó más épocas (52 frente a 50) y sus métricas de **validación**
+  del punto elegido por `EarlyStopping` fueron similares o mejores
+  (val_accuracy 0.830, val_loss 0.499). Es decir: el modelo que
+  `EarlyStopping` consideró "mejor" según el conjunto de validación no
+  fue el que mejor generalizó al conjunto de test.
+
+**Por qué pasa esto, y por qué no es un error:** con solo 165 imágenes
+en validación y 165 en test, ambos conjuntos son pequeños y su
+composición exacta (qué casos concretos caen en cada uno) influye en
+las métricas más de lo que sería deseable — es una consecuencia directa
+de la limitación de tamaño de dataset ya señalada en
+[Limitaciones](#limitaciones-y-consideraciones-éticas). Elegir el punto
+de parada según `val_loss` optimiza para el conjunto de validación, no
+para el de test; cuando ambos son pequeños, un modelo puede "acertar"
+más en validación sin que eso se traduzca proporcionalmente en test.
+Esto es evidencia práctica, no solo teórica, de por qué la validación
+cruzada (k-fold) sería una mejora metodológica real para este proyecto
+(ver [Trabajo futuro](#trabajo-futuro)): con un único split fijo, la
+cifra de "exactitud en test" tiene más varianza de la que aparenta una
+sola cifra con cuatro decimales.
+
+**Conclusión de esta ronda para el TFM:** subir el presupuesto de
+épocas no es una mejora automática ni gratuita — ayudó al modelo que
+realmente estaba limitado por el techo anterior (CNN Base), no cambió
+nada en el modelo cuyo problema es estructural y no de presupuesto
+(CNN + Augmentation), y en Transfer Learning introdujo varianza que
+bajó la cifra de test pese a métricas de validación similares. Los tres
+resultados son honestos y se reportan tal cual, incluido el que "salió
+peor" — es un hallazgo metodológico legítimo sobre las limitaciones de
+optimizar y evaluar con datasets pequeños, no un resultado a ocultar.
+
 ## Limitaciones y consideraciones éticas
 
 1. **Posible fuga de datos (*data leakage*) por ausencia de identificador de
@@ -659,12 +711,18 @@ capa convolucional.
   [Instalación](#instalación)), así que todo el reentrenamiento se hizo en
   CPU.
 - Validación cruzada (k-fold) en lugar de un único split, dado el tamaño
-  reducido del dataset.
+  reducido del dataset — la tercera ronda de entrenamiento (Hallazgo #7)
+  ya mostró evidencia directa de esta necesidad: Transfer Learning bajó
+  de exactitud en test pese a mejores métricas de validación, señal de
+  que un único split de 165+165 imágenes no es suficientemente estable
+  para conclusiones robustas sobre "cuál modelo es mejor".
 - Evaluar en un conjunto externo (otro hospital/dataset público de TC de
   tórax) para medir generalización real.
 - Explorar arquitecturas 3D que aprovechen la información volumétrica de
   cortes consecutivos, en lugar de clasificar cortes 2D de forma
   independiente.
-- Llevar a la app Streamlit los controles añadidos a la app FastAPI (elegir
-  número de épocas, botón "Entrenar todos los modelos"), para que ambas
-  interfaces vuelvan a tener paridad completa de funciones.
+- Si en algún momento hiciera falta una segunda interfaz más simple que la
+  de FastAPI (p. ej. para una demo rápida sin frontend propio), evaluar
+  Streamlit u otra opción similar — pero manteniendo una sola interfaz como
+  fuente de verdad para no repetir la divergencia que llevó a eliminar la
+  versión anterior (ver [App web interactiva](#app-web-interactiva)).

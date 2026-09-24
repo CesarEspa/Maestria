@@ -21,7 +21,8 @@ from progress_tracker import WebProgressCallback, mark_status
 
 MODEL_KEY = "transfer_efficientnet"
 DISPLAY_NAME = "Transfer Learning (EfficientNetB0)"
-PHASE1_EPOCHS = 15
+PHASE1_EPOCHS = 25  # subido de 15: paraba en la época 9 con margen de sobra, pero se sube
+                    # el techo por consistencia con el resto del presupuesto de esta ronda
 
 # Permite que la app web sobreescriba el número de épocas de la fase 2
 # (fine-tuning) para una ejecución concreta, sin tocar config.py. La fase 1

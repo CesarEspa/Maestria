@@ -1,8 +1,8 @@
 """
 Utilidades para registrar el progreso del entrenamiento en un archivo JSON.
-La app web (Streamlit) lee estos archivos para mostrar el estado en vivo
-(época actual, curvas de loss/accuracy, fase de entrenamiento) sin acoplarse
-directamente al proceso de entrenamiento, que corre en un subproceso aparte.
+La app web lee estos archivos para mostrar el estado en vivo (época actual,
+curvas de loss/accuracy, fase de entrenamiento) sin acoplarse directamente
+al proceso de entrenamiento, que corre en un subproceso aparte.
 """
 import json
 import os
@@ -145,8 +145,8 @@ try:
             self._write(current_epoch=self._current_epoch, status="phase_completed")
 
 except ImportError:
-    # TensorFlow puede no estar disponible en el proceso que solo lee progreso
-    # (p.ej. la app Streamlit corriendo en otro entorno). No es necesario aquí.
+    # TensorFlow puede no estar disponible en un proceso que solo lee
+    # progreso sin necesitar entrenar nada. No es necesario aquí.
     WebProgressCallback = None
 
 

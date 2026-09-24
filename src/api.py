@@ -1,7 +1,7 @@
 """
 Backend FastAPI del TFM — Detección y Clasificación de Cáncer de Pulmón.
 
-Expone una API REST que envuelve la misma lógica que usa la app Streamlit
+Expone una API REST sobre la lógica de negocio del proyecto
 (training_control.py, model_utils.py, gradcam_utils.py, results_utils.py) y
 sirve el frontend estático (HTML/CSS/JS) en frontend/, todo en un único
 proceso y un único puerto (evita problemas de CORS).
@@ -15,11 +15,10 @@ Luego abrir http://localhost:8000 en el navegador.
 Este backend es deliberadamente ligero (sin base de datos, sin autenticación,
 un solo usuario) porque su propósito es servir de interfaz visual sobre el
 pipeline de scripts ya existente. Estructurarlo como una API REST separada
-del frontend (en vez de acoplarlo todo, como hace Streamlit) permite hacerlo
-crecer más adelante: añadir autenticación, una base de datos para historial
-de clasificaciones, desplegarlo en un servidor real, servir el frontend por
-separado (p. ej. como una SPA en React), etc., sin tener que reescribir la
-lógica de negocio.
+del frontend permite hacerlo crecer más adelante: añadir autenticación, una
+base de datos para historial de clasificaciones, desplegarlo en un servidor
+real, servir el frontend por separado (p. ej. como una SPA en React), etc.,
+sin tener que reescribir la lógica de negocio.
 """
 import base64
 import io
@@ -34,7 +33,6 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
-from pydantic import BaseModel
 
 SRC_DIR = Path(__file__).resolve().parent
 if str(SRC_DIR) not in sys.path:
@@ -55,8 +53,8 @@ FRONTEND_DIR = SRC_DIR / "frontend"
 app = FastAPI(title="TFM Lung Cancer API", version="1.0")
 
 # ───────────────────────── Caché de modelos cargados ──────────────────────
-# Igual que st.cache_resource en la app Streamlit: evita recargar un modelo
-# de varios MB en cada petición. Se invalida si el archivo cambia (mtime).
+# Evita recargar un modelo de varios MB en cada petición. Se invalida si el
+# archivo cambia (mtime).
 _model_cache = {}
 
 
@@ -105,12 +103,6 @@ def _load_holdout_pool():
     return _holdout_cache
 
 
-# ──────────────────────────────── Modelos (Pydantic) ──────────────────────
-
-class TrainRequest(BaseModel):
-    pass  # sin cuerpo por ahora; la clave del modelo va en la URL
-
-
 # ────────────────────────────────── Salud ──────────────────────────────────
 
 @app.get("/api/health")
@@ -150,8 +142,12 @@ def train_model(key: str, epochs: int | None = None):
     if status == "running":
         raise HTTPException(409, "Este modelo ya se está entrenando.")
 
-    if epochs is not None and not (1 <= epochs <= 500):
-        raise HTTPException(400, "El número de épocas debe estar entre 1 y 500.")
+    max_epochs = entry.get("default_epochs")
+    if epochs is not None:
+        if max_epochs is None:
+            raise HTTPException(400, f"El modelo '{key}' no admite un número de épocas configurable.")
+        if not (1 <= epochs <= max_epochs):
+            raise HTTPException(400, f"El número de épocas debe estar entre 1 y {max_epochs} para este modelo.")
 
     launch_training(entry, epochs=epochs)
     return {"launched": True, "key": key, "epochs": epochs}

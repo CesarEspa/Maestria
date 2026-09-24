@@ -1,12 +1,8 @@
 """
-Control de entrenamiento compartido por la app Streamlit (app.py) y el
-backend FastAPI (backend/main.py): qué modelos existen, cómo lanzarlos como
-subprocesos independientes, cómo detenerlos y cómo determinar su estado
-actual combinando el JSON de progreso en vivo con la presencia del archivo
-del modelo en disco.
-
-Centralizar esto en un solo módulo evita que las dos interfaces (Streamlit
-y la futura web con backend) diverjan en su lógica de estado.
+Control de entrenamiento usado por el backend FastAPI (api.py): qué modelos
+existen, cómo lanzarlos como subprocesos independientes, cómo detenerlos y
+cómo determinar su estado actual combinando el JSON de progreso en vivo con
+la presencia del archivo del modelo en disco.
 """
 import os
 import re
@@ -23,18 +19,18 @@ STALE_SECONDS = 300  # si "running" lleva más de esto sin actualizar, se asume 
 
 TRAINABLE = [
     {"key": "cnn_base", "name": "CNN Base", "script": "03_train_cnn_base.py",
-     "model_file": "cnn_base.keras", "default_epochs": 80, "epochs_label": "Épocas",
-     "note": "LayerNorm + LR 1e-4, hasta 80 épocas. En CPU: ~40-60 min."},
+     "model_file": "cnn_base.keras", "default_epochs": 120, "epochs_label": "Épocas",
+     "note": "Red neuronal entrenada desde cero, sin variar las imágenes. Tarda entre 35 y 50 minutos."},
     {"key": "cnn_augmented", "name": "CNN + Augmentation", "script": "04_train_cnn_aug.py",
-     "model_file": "cnn_augmented.keras", "default_epochs": 80, "epochs_label": "Épocas",
-     "note": "Misma arquitectura con aumento de datos reducido. En CPU: ~50-80 min."},
+     "model_file": "cnn_augmented.keras", "default_epochs": 120, "epochs_label": "Épocas",
+     "note": "Misma red, pero variando cada imagen al entrenar (rotación, zoom, etc). Suele terminar rápido: 15 a 25 minutos."},
     {"key": "transfer_efficientnet", "name": "Transfer Learning (EfficientNetB0)",
      "script": "05_train_transfer.py", "model_file": "transfer_efficientnet.keras",
-     "default_epochs": 50, "epochs_label": "Épocas (fine-tuning, fase 2)",
-     "note": "Dos fases (cabeza + fine-tuning de 50 capas). En CPU: ~20-35 min."},
+     "default_epochs": 100, "epochs_label": "Épocas (ajuste fino)",
+     "note": "Parte de una red ya entrenada en millones de imágenes y la adapta a este problema. Tarda entre 20 y 30 minutos."},
     {"key": "svm_baseline", "name": "SVM (HOG) — Línea Base", "script": "08_baseline_ml.py",
      "model_file": "svm_baseline.joblib", "default_epochs": None, "epochs_label": None,
-     "note": "Extracción HOG + SVM. Rápido: ~1-2 min."},
+     "note": "Método clásico de aprendizaje automático, sin redes neuronales. El más rápido: 1 a 2 minutos."},
 ]
 
 TRAINABLE_BY_KEY = {t["key"]: t for t in TRAINABLE}
@@ -95,8 +91,8 @@ def launch_training(entry, epochs=None):
     """
     Lanza el script de entrenamiento correspondiente como un subproceso
     independiente (no bloqueante). El subproceso sigue corriendo aunque el
-    proceso que lo lanzó (Streamlit o el backend) se reinicie o se cierre la
-    pestaña del navegador; el progreso se sigue leyendo desde su archivo JSON.
+    backend se reinicie o se cierre la pestaña del navegador; el progreso
+    se sigue leyendo desde su archivo JSON.
 
     `epochs`, si se indica, sobreescribe el número de épocas configurado por
     defecto en config.py para ESTA ejecución concreta (vía variable de

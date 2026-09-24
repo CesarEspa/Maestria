@@ -165,7 +165,16 @@ function renderTrainingCards() {
     if (logToggle) logToggle.addEventListener("click", () => toggleLog(m.key));
     const epochInput = document.getElementById(`epoch-input-${m.key}`);
     if (epochInput) {
-      epochInput.addEventListener("input", () => { state.epochOverrides[m.key] = epochInput.value; });
+      epochInput.addEventListener("input", () => {
+        const max = m.default_epochs;
+        let v = parseInt(epochInput.value, 10);
+        if (!Number.isNaN(v)) {
+          if (max != null && v > max) v = max;
+          if (v < 1) v = 1;
+          if (String(v) !== epochInput.value) epochInput.value = v;
+        }
+        state.epochOverrides[m.key] = epochInput.value;
+      });
     }
 
     if (m.status === "running" && m.progress) {
@@ -213,7 +222,11 @@ function trainingCardHtml(m) {
         <div class="chart-box"><canvas id="chart-acc-${m.key}"></canvas></div>
       </div>`;
   } else if (m.status === "completed" && p.final_val_accuracy != null) {
+    const epochsChip = (m.default_epochs != null && p.current_epoch != null)
+      ? `<div class="metric-chip">Épocas entrenadas<span class="val">${p.current_epoch}</span></div>`
+      : "";
     progressBlock = `<div class="metric-chips">
+      ${epochsChip}
       <div class="metric-chip">Accuracy val<span class="val">${fmt4(p.final_val_accuracy)}</span></div>
       ${p.final_val_loss != null ? `<div class="metric-chip">Loss val<span class="val">${fmt4(p.final_val_loss)}</span></div>` : ""}
     </div>`;
@@ -228,13 +241,22 @@ function trainingCardHtml(m) {
   const trainLabel = ["completed", "failed", "stopped", "stale"].includes(m.status) ? "Reentrenar" : "Entrenar";
   const trainDisabled = (running || state.trainAll.active) ? "disabled" : "";
 
+  // Campo de épocas compacto (una sola línea, con el detalle en un
+  // tooltip) para que quepa junto al botón sin cambiar la altura de la
+  // fila — así los 4 botones siguen alineados aunque el SVM no tenga
+  // campo de épocas.
   let epochField = "";
   if (!running && m.default_epochs != null) {
     const val = state.epochOverrides[m.key] ?? m.default_epochs;
+    const currentModelText = (m.status === "completed" && p.current_epoch != null)
+      ? `Modelo actual entrenado con ${p.current_epoch} épocas. `
+      : "";
+    const tooltip = `${currentModelText}Máximo permitido: ${m.default_epochs} épocas.`;
     epochField = `
-      <label class="epoch-field">
-        ${m.epochs_label || "Épocas"}
-        <input type="number" min="1" max="500" step="1" value="${val}" id="epoch-input-${m.key}" ${trainDisabled} />
+      <label class="epoch-field" title="${tooltip}">
+        <span class="epoch-field-label">${m.epochs_label || "Épocas"}</span>
+        <input type="number" min="1" max="${m.default_epochs}" step="1" value="${val}" id="epoch-input-${m.key}" ${trainDisabled} />
+        <span class="epoch-max">/ ${m.default_epochs}</span>
       </label>`;
   }
 
@@ -308,8 +330,11 @@ function renderCharts(key, history) {
 
 function epochsFor(key) {
   const raw = state.epochOverrides[key];
-  const n = raw != null ? Number(raw) : null;
-  return n && n > 0 ? n : null;
+  let n = raw != null ? Number(raw) : null;
+  if (!n || n <= 0) return null;
+  const m = state.models.find((x) => x.key === key);
+  if (m && m.default_epochs != null && n > m.default_epochs) n = m.default_epochs;
+  return n;
 }
 
 async function handleTrain(key) {
