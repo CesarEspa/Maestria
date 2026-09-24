@@ -16,6 +16,14 @@ No es el README técnico (ese explica cómo instalar y ejecutar el
 código). Este archivo explica QUÉ se hizo, QUÉ se encontró, y QUÉ
 significa, con el detalle necesario para escribir el documento.
 
+>>> PARA EMPEZAR A ESCRIBIR EL TFM DIRECTAMENTE: ir a la SECCIÓN 9
+    ("Guion redactado, listo para adaptar al documento del TFM"), al
+    final de este archivo. Está en el registro formal de una memoria
+    de máster (introducción, objetivos con su cumplimiento, desarrollo,
+    resultados, explicación de cada figura, discusión y conclusiones),
+    lista para copiar y adaptar. Las secciones 1-8 son el material de
+    referencia y el registro cronológico detrás de esos párrafos.
+
 
 ====================================================================
 1. QUIÉN Y PARA QUÉ
@@ -991,3 +999,547 @@ más equilibrada entre clases (crucial en un problema médico). Esa
 mezcla de resultados, incluido el que empeoró (Transfer Learning en la
 Fase 8), es en sí misma una conclusión metodológica válida sobre las
 limitaciones de evaluar con datasets pequeños de imagen médica.
+
+
+====================================================================
+9. GUION REDACTADO, LISTO PARA ADAPTAR AL DOCUMENTO DEL TFM
+====================================================================
+
+Todo lo de abajo está escrito en el registro formal de un TFM (no en
+el tono de bitácora del resto de este archivo), organizado por
+capítulos típicos de memoria de máster, para poder copiarlo y
+adaptarlo directamente al documento final. Los números y nombres de
+archivo son exactos a fecha de la Fase 9; si se vuelve a entrenar
+algún modelo, hay que releer la sección 4 antes de dar estos párrafos
+por buenos (ver la Fase 7 sobre por qué no asumirlo sin comprobar).
+
+--------------------------------------------------------------------
+9.1 Introducción
+--------------------------------------------------------------------
+El cáncer de pulmón es, según la Organización Mundial de la Salud,
+una de las principales causas de mortalidad por cáncer a nivel
+mundial, en gran parte porque suele diagnosticarse en etapas
+avanzadas, cuando las opciones de tratamiento son más limitadas y el
+pronóstico empeora considerablemente. La tomografía computarizada
+(TC) de tórax es una de las herramientas de imagen más utilizadas
+para la detección y el seguimiento de nódulos pulmonares, pero su
+interpretación depende en gran medida de la experiencia del
+radiólogo, del volumen de estudios que debe revisar y de la
+variabilidad inherente entre observadores. En este contexto, los
+sistemas de apoyo al diagnóstico asistido por computador (conocidos
+como CAD, por sus siglas en inglés — CADe para detección y CADx para
+caracterización/clasificación) han cobrado relevancia como una
+segunda opinión automatizada que puede ayudar a priorizar casos,
+reducir la carga de trabajo y disminuir el riesgo de pasar por alto
+hallazgos relevantes, sin que esto implique sustituir el criterio
+clínico del especialista.
+
+En paralelo, el aprendizaje profundo —y en particular las redes
+neuronales convolucionales (CNN)— se ha consolidado como el enfoque
+de referencia para tareas de clasificación de imágenes médicas,
+gracias a su capacidad de aprender representaciones jerárquicas
+directamente de los píxeles, sin necesidad de diseñar manualmente
+características. Sin embargo, entrenar una CNN desde cero requiere
+grandes volúmenes de datos etiquetados, un recurso escaso en imagen
+médica por razones de privacidad, coste de anotación y la propia
+rareza de ciertas condiciones. Dos estrategias habituales para mitigar
+esta limitación son el aumento de datos (*data augmentation*), que
+genera variaciones sintéticas de las imágenes de entrenamiento para
+exponer al modelo a más variabilidad sin necesidad de más pacientes,
+y el aprendizaje por transferencia (*transfer learning*), que
+reutiliza las representaciones visuales aprendidas por una red
+preentrenada en un dominio con muchos datos (típicamente ImageNet) y
+las adapta a un dominio médico con muchos menos ejemplos disponibles.
+
+Este Trabajo de Fin de Máster (TFM) explora precisamente esa
+disyuntiva: comparar, sobre un mismo dataset público y reducido de TC
+de tórax (IQ-OTH/NCCD, 1097 imágenes en tres categorías: Normal,
+Benigno y Maligno), tres enfoques de clasificación basados en CNN
+—una red convolucional simple entrenada desde cero, la misma red con
+aumento de datos en tiempo real, y un modelo de transfer learning
+sobre EfficientNetB0— frente a una línea base de aprendizaje
+automático clásico (HOG + SVM), evaluando no solo qué tan bien
+clasifica cada modelo, sino también qué tan fiable es esa evaluación
+y qué tan explicable resulta la decisión del modelo mejor posicionado
+mediante mapas de activación Grad-CAM. A lo largo del desarrollo se
+tomó la decisión metodológica de documentar con la misma honestidad
+los resultados favorables y los que no lo fueron —incluyendo un
+colapso de entrenamiento diagnosticado y corregido a mitad de
+proyecto, una señal de fuga de datos detectada en la línea base
+clásica, y una limitación de explicabilidad encontrada en el mejor
+modelo—, en la convicción de que ese rigor es tan parte de los
+resultados de un TFM como las cifras de exactitud.
+
+--------------------------------------------------------------------
+9.2 Objetivos
+--------------------------------------------------------------------
+
+OBJETIVO GENERAL
+Desarrollar y evaluar un sistema de clasificación automática de
+imágenes de TC de tórax en las categorías Normal, Benigno y Maligno,
+basado en redes neuronales convolucionales y técnicas de aumento de
+datos, orientado al apoyo del proceso de cribado en servicios de
+radiología.
+
+Este objetivo general se considera CUMPLIDO: se construyó un pipeline
+completo (preprocesamiento → entrenamiento → evaluación →
+explicabilidad) y una aplicación web funcional que permite entrenar,
+clasificar y visualizar resultados de extremo a extremo, con cuatro
+modelos comparables entre sí sobre el mismo conjunto de prueba. El
+matiz importante, que se desarrolla en la sección de Limitaciones, es
+que la propia evaluación reveló una limitación estructural del
+dataset (ausencia de identificador de paciente) que impide afirmar
+con total confianza que las métricas obtenidas reflejen capacidad de
+generalización clínica real — algo que, lejos de invalidar el
+objetivo, forma parte de una evaluación crítica honesta.
+
+OBJETIVOS ESPECÍFICOS Y SU CUMPLIMIENTO
+
+  1. Preprocesar y analizar el dataset IQ-OTH/NCCD (normalización,
+     partición estratificada 70/15/15, data augmentation).
+
+     CUMPLIDO. Se implementó un análisis exploratorio (01_eda.py) que
+     caracteriza la distribución de clases (120 Benigno / 561 Maligno
+     / 416 Normal — un desbalance de clase relevante, con Maligno
+     representando el 51.1% del total y Benigno solo el 10.9%), la
+     distribución de tamaños originales de imagen y la distribución
+     de intensidad de píxel por clase (ver figuras explicadas en 9.5).
+     El preprocesamiento (02_preprocessing.py) normalizó todas las
+     imágenes a 224×224 px con interpolación LANCZOS, las escaló a
+     [0, 1], y generó una partición estratificada 70% entrenamiento
+     (767 imágenes) / 15% validación (165) / 15% prueba (165) con
+     semilla fija para reproducibilidad. El desbalance de clases se
+     compensó con `class_weight="balanced"` en todos los modelos de
+     Keras, y se implementó aumento de datos en tiempo real (flip
+     horizontal, rotación, zoom, contraste) para uno de los tres
+     modelos CNN, evaluando su efecto de forma controlada frente a la
+     misma arquitectura sin augmentation.
+
+  2. Diseñar, entrenar y comparar tres arquitecturas: CNN base, CNN
+     con augmentation, y transfer learning (EfficientNetB0).
+
+     CUMPLIDO. Se diseñaron y entrenaron las tres arquitecturas (ver
+     detalle completo en la sección 4.1-4.3), pasando por tres rondas
+     sucesivas de ajuste de hiperparámetros documentadas como parte
+     del propio proceso científico: una primera ronda que reveló un
+     colapso de entrenamiento en las dos CNN entrenadas desde cero
+     (sección 5.1 / Hallazgo 1 del README), una segunda ronda que
+     diagnosticó y corrigió la causa raíz (sustituir
+     BatchNormalization por LayerNormalization, bajar el learning
+     rate, aumentar la paciencia del `EarlyStopping`), y una tercera
+     ronda que amplió el presupuesto de épocas disponible para
+     comprobar si algún modelo seguía limitado por el techo anterior
+     (Fase 8). El resultado final, con los tres modelos entrenados
+     bajo el mismo protocolo y evaluados sobre el mismo conjunto de
+     prueba, se resume en la tabla de la sección 9.4.
+
+  3. Evaluar con sensibilidad, especificidad, exactitud, AUC-ROC y
+     matriz de confusión; contrastar con una línea base de ML clásico
+     (SVM + HOG).
+
+     CUMPLIDO. Los cuatro modelos (los tres de Keras más la línea base
+     SVM) se evaluaron sobre el mismo conjunto de prueba (165 imágenes
+     nunca vistas durante el entrenamiento) con exactitud, AUC-ROC
+     macro-average (one-vs-rest), F1 macro, sensibilidad por clase y
+     matriz de confusión completa, además de un informe de
+     clasificación (precision/recall/f1/support) por modelo. El
+     contraste con la línea base SVM+HOG resultó, en sí mismo, uno de
+     los hallazgos metodológicos más importantes del trabajo: su
+     resultado perfecto (100% en las tres métricas principales) no se
+     interpretó como un éxito, sino como la evidencia empírica más
+     clara de la limitación de fuga de datos del dataset (sección
+     9.6 y Limitaciones) — un ejemplo concreto de por qué la
+     evaluación crítica de resultados "demasiado buenos" es parte
+     imprescindible de este objetivo, no un efecto secundario.
+
+  4. Generar Grad-CAM sobre el mejor modelo y analizar su
+     aplicabilidad en un flujo de trabajo de radiología.
+
+     CUMPLIDO, con un resultado que matiza la aplicabilidad práctica.
+     Se generaron mapas de activación Grad-CAM sobre el modelo de
+     Transfer Learning (el más adecuado para explicabilidad por su
+     mejor equilibrio de sensibilidad entre clases) para nueve
+     imágenes de ejemplo (tres por clase). El análisis de esos mapas
+     reveló un problema real: el mapa de calor está dominado por un
+     único píxel saturado en una esquina fija de la rejilla de
+     activaciones, idéntico para cualquier imagen de entrada,
+     independientemente de la clase predicha (sección 5.3). Tras
+     descartar que fuera un error de implementación —se encontró y
+     corrigió un bug real de Keras 3 en el proceso— y verificar que el
+     patrón persiste en tres entrenamientos distintos del mismo
+     modelo, la conclusión es que Grad-CAM "clásico" tiene una
+     aplicabilidad limitada sobre esta arquitectura concreta en su
+     estado actual: no puede usarse, tal como está, como una
+     explicación fiable de en qué se fija el modelo para clasificar
+     una imagen. Esto cumple el objetivo de "analizar la
+     aplicabilidad" precisamente porque la respuesta es un análisis
+     crítico y no una validación automática — y abre una línea de
+     trabajo futuro concreta (probar Grad-CAM++ o variantes menos
+     sensibles a canales de activación atípicos).
+
+--------------------------------------------------------------------
+9.3 Desarrollo / Metodología (resumen narrativo)
+--------------------------------------------------------------------
+El desarrollo se organizó en cinco etapas secuenciales, implementadas
+como un pipeline de scripts de Python numerados (01 a 08, en
+src/), cada uno dependiente de los artefactos generados por el
+anterior:
+
+Primero, un análisis exploratorio de datos (01_eda.py) caracterizó el
+dataset original: 1097 imágenes de TC de tórax repartidas en tres
+carpetas por clase (Bengin cases, Malignant cases, Normal cases —los
+nombres de carpeta vienen así del dataset original de Kaggle, con la
+errata "Bengin" incluida), con tamaños originales heterogéneos y una
+distribución de intensidad de píxel bimodal, coherente con imágenes
+de TC en escala de grises donde coexisten tejido blando de baja
+densidad y estructuras óseas/densas de alta densidad.
+
+Segundo, el preprocesamiento (02_preprocessing.py) normalizó todas
+las imágenes a una resolución común de 224×224 píxeles —la resolución
+estándar de entrada para arquitecturas preentrenadas en ImageNet como
+EfficientNetB0, lo que permite reutilizar exactamente el mismo pipeline
+de datos para los cuatro modelos—, las convirtió a RGB, las escaló al
+rango [0, 1] y generó una partición estratificada 70/15/15 con semilla
+fija, guardada en un único archivo comprimido
+(outputs/splits/dataset_splits.npz) para evitar reprocesar las
+imágenes en cada entrenamiento.
+
+Tercero, el entrenamiento de los tres modelos basados en CNN
+(03_train_cnn_base.py, 04_train_cnn_aug.py, 05_train_transfer.py).
+La CNN Base es una arquitectura sencilla de tres bloques
+convolucionales (32→64→128 filtros) con normalización por capa
+(LayerNormalization), max-pooling, *global average pooling* y una
+cabeza densa final. La CNN + Augmentation reutiliza exactamente la
+misma arquitectura, añadiendo una capa de aumento de datos en tiempo
+real (flip horizontal, rotación ±0.08 radianes, zoom ±0.05,
+variación de contraste) para observar el efecto aislado del
+augmentation frente a la misma red sin él. El modelo de Transfer
+Learning parte de EfficientNetB0 preentrenada en ImageNet, entrenando
+primero solo una cabeza personalizada sobre la base congelada (fase 1)
+y después descongelando las últimas 50 capas de la red preentrenada
+para un ajuste fino de baja tasa de aprendizaje (fase 2). Los tres
+modelos comparten el mismo protocolo de entrenamiento: optimizador
+Adam, `class_weight="balanced"`, `EarlyStopping` sobre la pérdida de
+validación con restauración de los mejores pesos, y
+`ReduceLROnPlateau`; el número de épocas es un presupuesto máximo, no
+un valor fijo, ya que el propio `EarlyStopping` determina cuándo
+detener cada entrenamiento (ver el análisis detallado de por qué cada
+modelo se detuvo en un número distinto de épocas en la sección 9.4).
+
+Cuarto, la evaluación comparativa (06_evaluate.py) midió los tres
+modelos de Keras sobre el conjunto de prueba —nunca visto durante el
+entrenamiento— con un conjunto común de métricas (exactitud, AUC-ROC
+macro-average, F1 macro, sensibilidad por clase, matriz de confusión),
+y generó además una línea base de aprendizaje automático clásico
+(08_baseline_ml.py): extracción de características HOG (*Histogram of
+Oriented Gradients*) seguida de un SVM con kernel RBF, evaluada con el
+mismo protocolo para poder compararla directamente con las CNN.
+
+Quinto, la explicabilidad (07_gradcam.py) generó mapas de activación
+Grad-CAM sobre el mejor modelo disponible, superponiendo sobre la
+imagen original las regiones que más influyeron en la predicción,
+como primer paso hacia un sistema cuyas decisiones puedan ser
+auditadas por un radiólogo antes de confiar en ellas.
+
+Todo el desarrollo se realizó sobre un flujo reproducible: cada script
+puede ejecutarse de forma independiente desde la terminal, con una
+semilla fija (SEED=42) en todos los puntos donde interviene
+aleatoriedad, y los resultados (modelos, métricas, figuras) se
+persisten en disco para que la evaluación y las figuras no dependan de
+mantener una sesión de entrenamiento abierta. Además del pipeline de
+terminal, se construyó una aplicación web (FastAPI + frontend HTML/
+CSS/JS propio) que permite lanzar y monitorear el entrenamiento de
+cualquiera de los cuatro modelos en vivo, clasificar imágenes nuevas
+con explicabilidad Grad-CAM, y consultar la tabla comparativa de
+resultados sin depender de la terminal — pensada como una
+demostración práctica del sistema, no como el objeto de evaluación
+científica del TFM en sí.
+
+--------------------------------------------------------------------
+9.4 Resultados
+--------------------------------------------------------------------
+La tabla siguiente resume los resultados FINALES (tercera ronda de
+entrenamiento, Fase 8) de los cuatro modelos sobre el conjunto de
+prueba (165 imágenes: 18 Benigno, 84 Maligno, 63 Normal):
+
+Modelo                  Exactitud  AUC-ROC  F1 Macro  Sens.Benigno  Sens.Maligno  Sens.Normal
+CNN Base                  0.8667    0.9449    0.7490      0.4444        0.9881       0.8254
+CNN + Augmentation        0.5091    0.7233    0.2249      0.0000        1.0000       0.0000
+Transfer Learning         0.7939    0.9563    0.7330      0.8333        0.8571       0.6984
+SVM (HOG) — línea base    1.0000    1.0000    1.0000      1.0000        1.0000       1.0000
+
+(Fuente: outputs/figures/metricas_comparativas.json y
+metricas_svm_baseline.json, generados por 06_evaluate.py y
+08_baseline_ml.py respectivamente.)
+
+Sobre el número de épocas: cada modelo se detuvo en un punto distinto
+porque el presupuesto configurado (120 épocas para las dos CNN
+entrenadas desde cero, 25+100 para las dos fases de transfer learning)
+es un TECHO máximo, no una meta — `EarlyStopping` con paciencia 12
+corta el entrenamiento en cuanto la pérdida de validación deja de
+mejorar durante 12 épocas seguidas, restaurando los pesos de la mejor
+época. En la práctica: CNN Base se detuvo en la época 34 (mejor punto:
+época 22, con una exactitud de validación de 0.861); CNN + Augmentation
+se detuvo en apenas la época 13, con su mejor punto siendo la propia
+época 1 —nunca volvió a mejorar—, lo que por sí solo es evidencia de
+que su problema no es de presupuesto de épocas sino estructural;
+Transfer Learning completó 9 épocas en la fase de cabeza congelada y
+52 de las 100 disponibles en la fase de ajuste fino. El SVM no tiene
+concepto de épocas: converge con una única llamada a `.fit()` sobre
+características ya extraídas.
+
+Lectura de los resultados por objetivo:
+
+  - Frente al objetivo de "diseñar, entrenar y comparar tres
+    arquitecturas", el resultado más relevante es que NINGUNA de las
+    tres domina en todas las métricas. La CNN Base, una vez corregido
+    su colapso inicial, alcanza la exactitud y el F1 macro más altos
+    de los tres modelos de Keras, pero mantiene una sensibilidad muy
+    baja en la clase minoritaria Benigno (0.44 — deja sin detectar
+    más de la mitad de los casos benignos). Transfer Learning tiene
+    menor exactitud global, pero el AUC-ROC más alto de los tres y,
+    sobre todo, una sensibilidad mucho más equilibrada entre las tres
+    clases (0.83 / 0.86 / 0.70), lo que en un contexto de cribado
+    médico —donde el coste de no detectar un caso Benigno o Maligno
+    es alto— pesa más que un punto adicional de exactitud global. Por
+    eso Transfer Learning se mantiene como el modelo recomendado del
+    proyecto pese a no ganar en exactitud bruta. La CNN + Augmentation
+    es el único de los tres modelos de Keras que no logró superar su
+    colapso de entrenamiento: predice "Maligno" para prácticamente
+    todo el conjunto de prueba (sensibilidad 1.00 en Maligno, 0.00 en
+    las otras dos clases), un resultado que se mantuvo idéntico incluso
+    tras triplicar el presupuesto de épocas disponible, reforzando que
+    la causa es el propio aumento de datos en tiempo real interactuando
+    con un dataset pequeño (24 *batches* por época), no una limitación
+    de tiempo de entrenamiento.
+
+  - Frente al objetivo de "contrastar con una línea base de ML
+    clásico", el resultado —100% de exactitud, AUC-ROC y F1 en las
+    tres clases— es la pieza de evidencia más contundente de todo el
+    TFM sobre la limitación de fuga de datos del dataset: ningún
+    clasificador clásico sin aprendizaje de representaciones debería
+    alcanzar un resultado perfecto en un problema médico real de tres
+    clases, así que ese 100% se interpreta como una señal de alarma
+    metodológica, no como una victoria del método clásico sobre las
+    CNN (ver sección 9.6 y Limitaciones para el razonamiento completo).
+
+  - Frente al objetivo de generar y analizar Grad-CAM, el resultado
+    (detallado en 9.2, punto 4, y ampliado en la sección 9.5 al
+    explicar la figura) es que la explicabilidad actual del mejor
+    modelo es limitada — un hallazgo honesto sobre las fronteras
+    técnicas del propio sistema, no un fallo del proceso de
+    investigación.
+
+--------------------------------------------------------------------
+9.5 Explicación de las figuras generadas (para incluir como pies de figura)
+--------------------------------------------------------------------
+Todas las figuras están en outputs/figures/ (excepto el grid de
+Grad-CAM, en outputs/gradcam/). Se listan agrupadas por lo que
+documentan.
+
+ANÁLISIS EXPLORATORIO (generadas por 01_eda.py)
+
+  - distribucion_clases.png: gráfico de barras con el número de
+    imágenes por clase (Benigno 120, Maligno 561, Normal 416).
+    Evidencia visual directa del desbalance de clases del dataset —
+    Maligno tiene más de 4.5 veces las imágenes de Benigno—, que
+    justifica metodológicamente el uso de `class_weight="balanced"`
+    en el entrenamiento de los tres modelos de Keras.
+
+  - distribucion_tamanos.png: dos histogramas (ancho y alto en
+    píxeles) de las imágenes originales antes de normalizar. Muestra
+    que, pese a que el rango declarado de tamaños es heterogéneo
+    (506–801 px de ancho, 331–512 px de alto), en la práctica más del
+    95% de las imágenes comparte un único tamaño (≈506×512 px), con
+    solo un puñado de valores atípicos — es decir, la variabilidad de
+    tamaño del dataset es mucho menor de lo que sugeriría el rango
+    mínimo-máximo por sí solo. Justifica que redimensionar todo a
+    224×224 px con interpolación LANCZOS sea una normalización segura
+    y no introduzca una distorsión desigual entre clases.
+
+  - distribucion_intensidad.png: histograma de densidad de la
+    intensidad de píxel (0-255), superpuesto por clase. Muestra una
+    distribución bimodal —un pico dominante en intensidades bajas
+    (≈40-50, correspondiente al fondo y tejido blando) y un pico
+    secundario más disperso en intensidades altas (≈190-230,
+    estructuras densas/óseas)— con las tres clases casi totalmente
+    superpuestas entre sí. La lectura metodológica relevante es que
+    la intensidad de píxel por sí sola NO separa visualmente las
+    clases, lo que justifica que la tarea requiera un modelo capaz de
+    aprender patrones espaciales/texturales (como una CNN) en lugar de
+    depender de estadísticos simples de intensidad.
+
+  - muestras_por_clase.png: rejilla de 3×3 con tres cortes axiales de
+    TC de tórax representativos por clase (Benigno, Maligno, Normal).
+    Sirve como referencia visual cualitativa de cómo se ven las tres
+    categorías: en los ejemplos de Maligno se aprecian masas/nódulos
+    de mayor tamaño o densidad claramente visibles en el parénquima
+    pulmonar, mientras que los ejemplos Normal muestran parénquima
+    pulmonar sin hallazgos evidentes.
+
+  - muestras_augmentation.png: una imagen original y nueve variantes
+    generadas por la capa de aumento de datos (rotación, zoom,
+    contraste, flip horizontal) usada en la CNN + Augmentation.
+    Ilustra que las transformaciones aplicadas son sutiles y
+    anatómicamente plausibles para una TC de tórax (por eso se
+    descartaron explícitamente el flip vertical y la traslación, que
+    no lo son) — relevante para la discusión de por qué el colapso de
+    este modelo se atribuye a la interacción con un dataset pequeño y
+    no a transformaciones agresivas o irreales.
+
+CURVAS DE ENTRENAMIENTO (una por modelo de Keras, generadas por
+03/04/05_train_*.py al final de cada entrenamiento)
+
+  - curvas_cnn_base.png, curvas_cnn_augmented.png,
+    curvas_transfer_learning.png: cada una muestra dos paneles
+    (pérdida y exactitud) con las curvas de entrenamiento y
+    validación por época. Son la evidencia visual directa de
+    convergencia (o falta de ella): la de CNN Base muestra una
+    convergencia sana, con la pérdida de validación bajando de forma
+    sostenida hasta estabilizarse; la de CNN + Augmentation muestra el
+    patrón de colapso (la exactitud de validación se congela en un
+    valor fijo casi desde el principio, mientras la de entrenamiento
+    sigue moviéndose); la de Transfer Learning muestra las dos fases
+    del entrenamiento claramente diferenciadas (el salto de exactitud
+    al iniciar la fase 2 de ajuste fino).
+
+COMPARACIÓN ENTRE MODELOS (generadas por 06_evaluate.py)
+
+  - confusion_matrix_<modelo>.png (una por cada uno de los 4 modelos):
+    matriz de confusión 3×3 (Benigno/Maligno/Normal) con el recuento
+    exacto de aciertos y errores por par clase real/clase predicha.
+    Es la evidencia más granular de CÓMO se equivoca cada modelo: la
+    de CNN Base muestra que sus errores se concentran en confundir
+    Benigno con Normal (10 de 18 casos Benigno se predicen como
+    Normal); la de CNN + Augmentation muestra la columna "Maligno"
+    completamente llena (0/18, 84/84, 0/63 en la fila correspondiente)
+    — la firma visual inequívoca de un modelo colapsado a una sola
+    clase; la de Transfer Learning muestra errores más repartidos y
+    en ambas direcciones; la del SVM muestra una diagonal perfecta sin
+    ni un solo error, la evidencia visual más directa de la sospecha
+    de fuga de datos.
+
+  - classification_report_<modelo>.png (una por modelo): tabla en
+    forma de imagen con precision, recall, f1-score y support por
+    clase. Es una vista complementaria a la matriz de confusión, útil
+    para citar cifras exactas de precisión y exhaustividad por clase
+    en el cuerpo del texto sin tener que calcularlas de nuevo.
+
+  - curvas_roc_comparativas.png: las curvas ROC macro-average
+    (one-vs-rest) de los 4 modelos superpuestas en un único gráfico,
+    con el AUC de cada una en la leyenda y la diagonal de un
+    clasificador aleatorio como referencia. Permite comparar
+    visualmente de un vistazo la capacidad discriminativa de los 4
+    modelos: la curva de la SVM pegada a la esquina superior izquierda
+    (AUC≈1.0) es, de nuevo, la representación visual más clara de que
+    ese resultado no es creíble como generalización real; las curvas
+    de CNN Base y Transfer Learning se superponen bastante entre sí,
+    ambas claramente por encima de la de CNN + Augmentation, que se
+    aproxima mucho más a la diagonal aleatoria en la zona de FPR
+    bajo-medio.
+
+  - tabla_comparativa.png: la misma tabla de métricas de la sección
+    9.4, renderizada como imagen para incluir directamente en el
+    documento sin tener que recrear la tabla.
+
+EXPLICABILIDAD (generada por 07_gradcam.py)
+
+  - gradcam_grid.png: rejilla de 3×3 con nueve pares de imágenes
+    (original + mapa de calor Grad-CAM superpuesto) del modelo de
+    Transfer Learning, tres ejemplos por clase, con la predicción y la
+    confianza de cada uno. Es la evidencia visual del hallazgo de la
+    sección 5.3: en las nueve imágenes, el punto caliente del mapa de
+    calor aparece siempre en la misma esquina inferior derecha,
+    independientemente del contenido real de la imagen o de la clase
+    predicha — la prueba visual directa de que el mapa no está
+    señalando regiones anatómicas relevantes para la decisión del
+    modelo.
+
+--------------------------------------------------------------------
+9.6 Discusión
+--------------------------------------------------------------------
+Tomados en conjunto, los resultados de este TFM sostienen tres ideas
+centrales. La primera es que el diagnóstico y la corrección
+sistemática de un problema de entrenamiento —el colapso observado en
+la primera ronda— fue más informativo que si los modelos hubieran
+convergido bien desde el principio: permitió aislar con evidencia
+empírica que la causa era la combinación de `BatchNormalization` con
+pocos *batches* por época y un *learning rate* alto, y demostrar que
+corregirla arreglaba por completo un modelo (CNN Base) sin arreglar
+del todo el otro (CNN + Augmentation), acotando así el augmentation
+en tiempo real como un factor causal adicional de inestabilidad en
+datasets pequeños.
+
+La segunda es que "el mejor modelo" no es una pregunta con una única
+respuesta correcta cuando las métricas no coinciden entre sí: la
+tercera ronda de entrenamiento dejó a la CNN Base por delante en
+exactitud y F1 macro, pero a Transfer Learning por delante en AUC-ROC
+y en el reparto de sensibilidad entre clases. En un problema médico
+real, donde el coste de un falso negativo en la clase minoritaria
+(Benigno) no es equivalente al coste de un punto de exactitud global,
+justificar la elección del modelo recomendado requiere hacer explícito
+ese criterio de decisión —y no limitarse a reportar la cifra más alta
+de una sola métrica.
+
+La tercera es que la fiabilidad de una evaluación depende tanto del
+modelo como del dataset y del propio diseño experimental. El 100% de
+exactitud de la SVM+HOG es, paradójicamente, uno de los resultados más
+valiosos del trabajo precisamente porque NO se interpretó como un
+éxito: al no existir identificador de paciente en el dataset exportado,
+es muy probable que cortes de TC casi idénticos del mismo paciente
+queden repartidos entre entrenamiento y prueba, permitiendo que un
+método sin capacidad real de generalización memorice apariencias en
+lugar de aprender patrones patológicos. Esa misma limitación de
+fuga de datos probablemente infla también, en algún grado no
+cuantificable con los datos disponibles, las métricas de los tres
+modelos de Keras — razón por la cual todas las cifras de este TFM
+deben presentarse junto con esa advertencia, y no como una medida
+absoluta de la capacidad diagnóstica del sistema. En la misma línea,
+la caída de exactitud de Transfer Learning en la tercera ronda pese a
+mejores métricas de validación es evidencia práctica —no solo teórica—
+de que un único split fijo de validación/prueba de 165 imágenes cada
+uno introduce más varianza de la que aparenta una cifra con cuatro
+decimales, lo que motiva validación cruzada como mejora metodológica
+prioritaria de cara a un trabajo futuro.
+
+--------------------------------------------------------------------
+9.7 Conclusiones (borrador)
+--------------------------------------------------------------------
+Este trabajo desarrolló y evaluó un sistema de apoyo al diagnóstico
+para la clasificación de imágenes de TC de tórax en tres categorías,
+cumpliendo los cuatro objetivos específicos planteados: se preprocesó
+y caracterizó el dataset IQ-OTH/NCCD, se diseñaron, entrenaron y
+compararon tres arquitecturas de CNN frente a una línea base clásica,
+se evaluaron con un conjunto común de métricas estándar de
+clasificación médica, y se generaron e interpretaron críticamente
+mapas de explicabilidad Grad-CAM sobre el mejor modelo.
+
+Los resultados muestran que, tras diagnosticar y corregir un problema
+real de inestabilidad de entrenamiento, es posible entrenar modelos
+competitivos incluso desde cero sobre un dataset reducido (CNN Base:
+86.67% de exactitud), y que el aprendizaje por transferencia, aunque
+no siempre gane en exactitud bruta, ofrece el mejor equilibrio de
+sensibilidad entre clases (Transfer Learning: AUC-ROC 0.956,
+sensibilidad entre 0.70 y 0.86 en las tres clases), lo que lo convierte
+en el modelo recomendado para un caso de uso de cribado donde no
+detectar un caso tiene un coste alto. Al mismo tiempo, el trabajo
+documenta con la misma transparencia los resultados que no favorecen
+al sistema: un modelo (CNN + Augmentation) cuyo colapso de
+entrenamiento no se logró resolver por completo, una línea base
+clásica cuyo resultado perfecto es evidencia de fuga de datos y no de
+capacidad real, y una limitación de explicabilidad en el modelo
+recomendado que impide, en su estado actual, ofrecer al radiólogo una
+justificación visual fiable de cada predicción.
+
+La conclusión general es que el sistema desarrollado cumple su
+objetivo como PROTOTIPO ACADÉMICO de apoyo al diagnóstico, pero no
+está listo —ni pretende estarlo— para un uso clínico real: la fuga de
+datos por ausencia de identificador de paciente es una limitación
+metodológica de fondo que exigiría, como mínimo, reconstruir el split
+a nivel de paciente y validar sobre un conjunto externo antes de
+considerar cualquier aplicación fuera del ámbito académico. Dentro de
+esas fronteras, el proyecto demuestra de forma honesta tanto el
+potencial como los límites concretos de aplicar CNNs y transfer
+learning a un problema de imagen médica con recursos de datos
+limitados — que es, en última instancia, la situación realista a la
+que se enfrenta gran parte de la investigación aplicada en este campo.

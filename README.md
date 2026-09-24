@@ -34,18 +34,26 @@ TC de tórax en tres categorías (**Normal**, **Benigno**, **Maligno**),
 basado en redes neuronales convolucionales (CNN) y técnicas de aumento de
 datos, orientado al apoyo del proceso de cribado en servicios de radiología.
 
-**Objetivos específicos:**
+**Objetivos específicos** *(✓ = cumplido; el detalle completo de cómo se
+cumplió cada uno, con cifras exactas, está en la sección 9.2 de
+`PROYECTO_CLAUDE_CONTEXTO.txt`, redactado en formato TFM listo para
+adaptar)*:
 
-- Preprocesar y analizar el dataset IQ-OTH/NCCD, aplicando normalización,
+- ✓ Preprocesar y analizar el dataset IQ-OTH/NCCD, aplicando normalización,
   partición estratificada (70/15/15) y *data augmentation* para mitigar el
   desbalance entre clases.
-- Diseñar, entrenar y comparar tres arquitecturas: CNN base, CNN con
-  augmentation, y transfer learning (EfficientNetB0).
-- Evaluar con sensibilidad, especificidad, exactitud, AUC-ROC y matriz de
+- ✓ Diseñar, entrenar y comparar tres arquitecturas: CNN base, CNN con
+  augmentation, y transfer learning (EfficientNetB0). Resultado: ninguna
+  domina en todas las métricas — ver [Resultados](#resultados).
+- ✓ Evaluar con sensibilidad, especificidad, exactitud, AUC-ROC y matriz de
   confusión; contrastar con una línea base de ML clásico (SVM + HOG) y con
-  la literatura.
-- Generar mapas Grad-CAM sobre el mejor modelo y analizar su aplicabilidad
-  en un flujo de trabajo de radiología.
+  la literatura. El contraste con la SVM reveló la señal de fuga de datos
+  más clara del proyecto (100% de exactitud, ver
+  [Hallazgo #5](#hallazgos-y-análisis)).
+- ✓ Generar mapas Grad-CAM sobre el mejor modelo y analizar su aplicabilidad
+  en un flujo de trabajo de radiología. Resultado: aplicabilidad limitada
+  en su estado actual (ver [Hallazgo #6](#hallazgos-y-análisis)) — un
+  hallazgo honesto, no un objetivo incumplido.
 
 ## Dataset
 
@@ -398,6 +406,27 @@ Figuras nuevas de esta ronda: `curvas_roc_comparativas.png` (las 4 curvas
 ROC macro-average superpuestas) y `classification_report_<modelo>.png`
 (precision/recall/f1/support por clase, como imagen, para cada uno de los
 4 modelos) en `outputs/figures/`.
+
+### Catálogo de figuras generadas
+
+Todas en `outputs/figures/` salvo el grid de Grad-CAM, en
+`outputs/gradcam/`. *(Explicación detallada de qué muestra e interpreta
+cada una, lista para usar como pie de figura en el TFM, en la sección 9.5
+de `PROYECTO_CLAUDE_CONTEXTO.txt`.)*
+
+| Figura | Qué muestra |
+|---|---|
+| `distribucion_clases.png` | Nº de imágenes por clase — evidencia del desbalance (Maligno 561 vs. Benigno 120) |
+| `distribucion_tamanos.png` | Histogramas de ancho/alto originales — > 95% del dataset comparte un único tamaño |
+| `distribucion_intensidad.png` | Densidad de intensidad de píxel por clase — bimodal, clases muy superpuestas |
+| `muestras_por_clase.png` | 9 cortes axiales de ejemplo (3 por clase) |
+| `muestras_augmentation.png` | 1 imagen original + 9 variantes generadas por la capa de aumento de datos |
+| `curvas_<modelo>.png` (×3) | Pérdida y exactitud de entrenamiento/validación por época, una por modelo Keras |
+| `confusion_matrix_<modelo>.png` (×4) | Matriz de confusión 3×3 por modelo |
+| `classification_report_<modelo>.png` (×4) | Precision/recall/f1/support por clase, como imagen |
+| `curvas_roc_comparativas.png` | Curvas ROC macro-average de los 4 modelos superpuestas |
+| `tabla_comparativa.png` | La tabla de [Resultados](#resultados) como imagen |
+| `gradcam_grid.png` | 9 mapas Grad-CAM (3 por clase) del mejor modelo — ver [Hallazgo #6](#hallazgos-y-análisis) |
 
 ## Hallazgos y análisis
 
