@@ -35,7 +35,7 @@ MODEL_SPECS = [
     ("Transfer Learning", "transfer_efficientnet.keras"),
 ]
 SVM_MODEL_NAME = "SVM (HOG) — Línea Base"
-ROC_COLORS = ["#3498db", "#e67e22", "#2ecc71", "#9b59b6", "#1abc9c"]
+ROC_COLORS = ["#3498db", "#e67e22", "#2ecc71", "#9b59b6", "#1abc9c", "#c0392b"]
 
 
 def specificity_per_class_from_cm(cm):
@@ -177,6 +177,7 @@ def plot_comparison_table(results):
     table.auto_set_font_size(False)
     table.set_fontsize(11)
     table.scale(1, 1.8)
+    table.auto_set_column_width(col=list(range(len(headers))))
 
     # Colorear headers
     for j in range(len(headers)):
@@ -225,6 +226,7 @@ def plot_specificity_table(results, filename="tabla_comparativa_especificidad.pn
     table.auto_set_font_size(False)
     table.set_fontsize(11)
     table.scale(1, 1.8)
+    table.auto_set_column_width(col=list(range(len(headers))))
 
     for j in range(len(headers)):
         table[0, j].set_text_props(color="white", fontweight="bold")
@@ -424,6 +426,34 @@ def main():
         print("\n  ⚠ No se encontró transfer_efficientnet_segmented.keras o "
               "dataset_splits_segmented.npz — se omite el 5º modelo (ejecutar "
               "02b_segmentation.py y 05b_train_transfer_segmented.py primero).")
+
+    # ── Sexto modelo: CNN + CutMix (Fase 10, Tarea 3) ──────────────────
+    # Entrenado por 04b_train_cnn_cutmix.py. CutMix solo cambia CÓMO se
+    # entrena (mezcla de imágenes/etiquetas en el batch de entrenamiento);
+    # el modelo resultante sigue esperando imágenes normales en inferencia,
+    # así que se evalúa sobre el TEST ORIGINAL sin segmentar (igual que
+    # CNN Base y CNN + Augmentation), no sobre el segmentado.
+    cutmix_model_path = MODELS_DIR / "cnn_cutmix.keras"
+    CUTMIX_MODEL_NAME = "CNN + CutMix"
+    if cutmix_model_path.exists():
+        print(f"\n  ── {CUTMIX_MODEL_NAME} ──")
+        cutmix_model = keras.models.load_model(cutmix_model_path)
+        cutmix_result = evaluate_model(cutmix_model, X_test, y_test, CUTMIX_MODEL_NAME)
+        results.append(cutmix_result)
+
+        print(f"  Accuracy: {cutmix_result['accuracy']:.4f}")
+        print(f"  AUC-ROC:  {cutmix_result['auc_roc']:.4f}" if cutmix_result["auc_roc"] else "  AUC-ROC: N/A")
+        print(classification_report(y_test, cutmix_result["y_pred"], target_names=CLASS_LABELS))
+
+        safe_name = safe_filename(CUTMIX_MODEL_NAME)
+        plot_confusion_matrix(cutmix_result["confusion_matrix"], CUTMIX_MODEL_NAME,
+                              f"confusion_matrix_{safe_name}.png")
+        plot_classification_report_image(
+            cutmix_result["report"], CUTMIX_MODEL_NAME, f"classification_report_{safe_name}.png"
+        )
+    else:
+        print("\n  ⚠ No se encontró cnn_cutmix.keras — se omite el 6º modelo "
+              "(ejecutar 04b_train_cnn_cutmix.py primero).")
 
     if len(results) >= 2:
         print("\n[3/4] Generando tabla comparativa...")

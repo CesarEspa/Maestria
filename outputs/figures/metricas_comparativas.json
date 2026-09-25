@@ -66,5 +66,22 @@
       "Normal": 0.8921568627450981
     },
     "specificity_macro": 0.904087560950306
+  },
+  {
+    "name": "CNN + CutMix",
+    "accuracy": 0.509090909090909,
+    "auc_roc": 0.7175042856648832,
+    "f1_macro": 0.2248995983935743,
+    "sensitivity_per_class": {
+      "Benigno": 0.0,
+      "Maligno": 1.0,
+      "Normal": 0.0
+    },
+    "specificity_per_class": {
+      "Benigno": 1.0,
+      "Maligno": 0.0,
+      "Normal": 1.0
+    },
+    "specificity_macro": 0.6666666666666666
   }
 ]

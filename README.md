@@ -109,6 +109,7 @@ tfm-lung-cancer/
 │   ├── 02b_segmentation.py       # Segmentación pulmonar clásica (Otsu + morfología)
 │   ├── 03_train_cnn_base.py      # CNN sencilla sin aumento de datos
 │   ├── 04_train_cnn_aug.py       # Misma CNN con aumento de datos en tiempo real
+│   ├── 04b_train_cnn_cutmix.py   # Misma CNN con CutMix (intercambio de píxeles)
 │   ├── 05_train_transfer.py      # Transfer learning EfficientNetB0 (2 fases)
 │   ├── 05b_train_transfer_segmented.py  # Igual, pero sobre datos segmentados
 │   ├── 06_evaluate.py            # Evaluación comparativa de los modelos Keras en test
@@ -202,9 +203,10 @@ python 02_preprocessing.py      # Split 70/15/15 → outputs/splits/dataset_spli
 python 02b_segmentation.py      # Segmentación pulmonar → dataset_splits_segmented.npz (~2-3 min)
 python 03_train_cnn_base.py     # ~35-50 min en CPU (hasta 120 épocas, paciencia 12)
 python 04_train_cnn_aug.py      # ~15-25 min en CPU (para pronto: colapsa en ~13 épocas, ver Hallazgos)
+python 04b_train_cnn_cutmix.py  # ~15-20 min en CPU (también colapsa en ~13 épocas, ver Hallazgos)
 python 05_train_transfer.py     # ~20-30 min en CPU (2 fases, hasta 25+100 épocas)
 python 05b_train_transfer_segmented.py  # Igual, sobre datos segmentados (~20-30 min)
-python 06_evaluate.py           # Evaluación comparativa en test (los 5 modelos)
+python 06_evaluate.py           # Evaluación comparativa en test (los 6 modelos)
 python 07_gradcam.py            # Mapas de activación del mejor modelo
 python 07b_gradcam_segmentado.py  # Mapas de activación del modelo segmentado
 python 08_baseline_ml.py        # Línea base SVM + HOG (~1-2 min)
@@ -394,6 +396,7 @@ de TensorFlow del equipo (ver nota en [Instalación](#instalación)).
 | CNN + Augmentation | 0.5091 ⚠️ | 0.7233 | 0.2249 | 0.00 | 1.00 | 0.00 | 1.00 | 0.00 ⚠️ | 1.00 |
 | **Transfer Learning (EfficientNetB0)** | 0.7939 | **0.9563** | 0.7330 | **0.83** | 0.86 | 0.70 | 0.83 | 1.00 | 0.91 |
 | Transfer Learning + Segmentación | 0.7879 | 0.9118 | 0.6968 | 0.56 | 0.89 | 0.71 | 0.86 | 0.96 | 0.89 |
+| CNN + CutMix | 0.5091 ⚠️ | 0.7175 | 0.2249 | 0.00 | 1.00 | 0.00 | 1.00 | 0.00 ⚠️ | 1.00 |
 | SVM (HOG) — Línea base | 1.0000 ⚠️ | 1.0000 ⚠️ | 1.0000 ⚠️ | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
 
 *(Especificidad por clase, uno-contra-el-resto, calculada desde la matriz
@@ -412,7 +415,12 @@ la sensibilidad: al predecir siempre "Maligno", su especificidad en esa
 clase es **0.00** (nunca descarta a nadie de ser Maligno, así que no
 puede servir ni siquiera para "confirmar que alguien NO tiene cáncer"),
 mientras que su 100% de especificidad en Benigno/Normal es un artefacto
-trivial de no predecir jamás esas clases, no una fortaleza real.
+trivial de no predecir jamás esas clases, no una fortaleza real. **CNN +
+CutMix reproduce ese mismo colapso número por número** (0.5091 de
+exactitud, especificidad 0.00 en Maligno) — ver
+[Hallazgo #9](#hallazgos-y-análisis) para el análisis completo de por qué
+un aumento de datos completamente distinto llega exactamente al mismo
+punto muerto.
 
 **¿Cuál es "el mejor" ahora? Es una decisión más reñida que antes.** Con
 más presupuesto de épocas, la **CNN Base** mejoró en todo (86.67% de
@@ -605,6 +613,51 @@ Maligno mejora levemente (75/84, antes 72/84).
 0.9563), ambos más bajos que el modelo original — la segmentación no
 mejoró el rendimiento global.
 
+#### CNN + CutMix (`04b_train_cnn_cutmix.py`)
+
+Misma arquitectura, optimizador, loss, presupuesto de épocas, paciencia y
+`class_weight` que CNN + Augmentation — el único cambio es el aumento de
+datos: en vez de transformaciones geométricas, CutMix recorta una región
+rectangular aleatoria de una imagen del batch y la pega sobre otra,
+mezclando las etiquetas en la misma proporción que el área intercambiada
+(técnica citada explícitamente en el resumen de la propuesta del TFM como
+"intercambio de píxeles"). Ver [Hallazgo #9](#hallazgos-y-análisis) para
+el análisis completo.
+
+<img src="outputs/figures/muestras_cutmix.png" width="720">
+
+**`muestras_cutmix.png`** — 8 ejemplos de un batch tras aplicar CutMix,
+con la etiqueta mezclada resultante. **Resultado:** el parche rectangular
+intercambiado es visible a simple vista en las 8 imágenes, y la etiqueta
+mezclada corresponde exactamente a la proporción de área intercambiada
+(p. ej. `[0.81/0.19/0.00]` cuando el parche pegado cubre ≈19% del área) —
+confirma que la mezcla de píxeles y de etiquetas está implementada
+correctamente.
+
+<img src="outputs/figures/curvas_cnn_cutmix.png" width="620">
+
+**`curvas_cnn_cutmix.png`** — **Resultado:** el entrenamiento se detiene
+en la época 13 (paciencia 12 sin mejorar `val_loss`); la pérdida de
+validación nunca baja de su valor en la época 1 (1.0476), pese a que la
+exactitud de validación llega a picos de hasta 73.3% (época 9) — un pico
+que `EarlyStopping` descarta porque vigila `val_loss`, no `val_accuracy`,
+y ese pico no coincide con la época de menor pérdida.
+
+<img src="outputs/figures/confusion_matrix_cnn_cutmix.png" width="480">
+
+**`confusion_matrix_cnn_cutmix.png`** — **Resultado:** exactamente el
+mismo colapso que CNN + Augmentation — 100% de las 165 imágenes de test
+predichas como "Maligno" (18/18 Benigno mal clasificado, 84/84 Maligno
+correcto solo porque acierta por descarte, 63/63 Normal mal clasificado).
+
+<img src="outputs/figures/classification_report_cnn_cutmix.png" width="480">
+
+**`classification_report_cnn_cutmix.png`** — **Resultado:** exactitud
+0.5091, F1 macro 0.2249, AUC-ROC 0.7175 — prácticamente idénticos a los
+de CNN + Augmentation (0.5091, 0.2249, 0.7233); la hipótesis de que
+mezclar etiquetas de forma continua evitaría el colapso **no se
+confirma**.
+
 #### SVM (HOG) — línea base
 
 <img src="outputs/figures/confusion_matrix_svm_baseline.png" width="480">
@@ -622,23 +675,24 @@ problema médico real.
 clase. **Resultado:** 1.000 en las tres métricas para las tres clases —
 mismo resultado, misma advertencia.
 
-#### Comparación entre los 4 modelos
+#### Comparación entre los 5 modelos de Keras (+ SVM)
 
 <img src="outputs/figures/curvas_roc_comparativas.png" width="620">
 
 **`curvas_roc_comparativas.png`** — Curvas ROC macro-average
-(one-vs-rest) de los 4 modelos superpuestas, con el AUC de cada una en
-la leyenda. **Resultado:** la curva de la SVM pegada a la esquina
-superior izquierda (AUC≈1.0) vuelve a ser la señal visual de que ese
-resultado no es creíble; CNN Base y Transfer Learning se superponen
-bastante entre sí y quedan claramente por encima de CNN + Augmentation,
-que se acerca mucho más a la diagonal aleatoria en la zona de FPR
-bajo-medio.
+(one-vs-rest) de los 5 modelos de Keras + la SVM, superpuestas, con el
+AUC de cada una en la leyenda. **Resultado:** la curva de la SVM pegada
+a la esquina superior izquierda (AUC≈1.0) vuelve a ser la señal visual
+de que ese resultado no es creíble; CNN Base y Transfer Learning se
+superponen bastante entre sí y quedan claramente por encima de
+CNN + Augmentation y CNN + CutMix, cuyas curvas prácticamente se
+superponen entre sí (AUC 0.7233 vs. 0.7175) y se acercan mucho más a la
+diagonal aleatoria en la zona de FPR bajo-medio.
 
 <img src="outputs/figures/tabla_comparativa.png" width="620">
 
 **`tabla_comparativa.png`** — Exactitud, AUC-ROC, F1 macro y sensibilidad
-por clase de los 3 modelos de Keras (la SVM se trata aparte, sin
+por clase de los 5 modelos de Keras (la SVM se trata aparte, sin
 retocarla — ver [Limitaciones](#limitaciones-y-consideraciones-éticas)).
 Es la misma información que la mitad izquierda de la tabla de
 [Resultados](#resultados), renderizada como imagen.
@@ -646,26 +700,29 @@ Es la misma información que la mitad izquierda de la tabla de
 <img src="outputs/figures/tabla_comparativa_especificidad.png" width="620">
 
 **`tabla_comparativa_especificidad.png`** — Especificidad por clase
-(uno-contra-el-resto) de los 3 modelos de Keras, calculada desde su
+(uno-contra-el-resto) de los 5 modelos de Keras, calculada desde su
 matriz de confusión: para la clase i, Especificidad = VN/(VN+FP), con
 VN = casos que no son de la clase i y el modelo tampoco predijo como
 tal, y FP = casos de otra clase que el modelo predijo erróneamente
 como i. **Resultado:** CNN Base tiene la especificidad macro más alta
-(0.9401) de los 3 modelos de Keras; CNN + Augmentation tiene la más
-baja (0.6667), arrastrada por su 0.0000 en Maligno.
+(0.9401) de los 5 modelos de Keras; CNN + Augmentation y CNN + CutMix
+empatan en la más baja (0.6667), ambas arrastradas por su 0.0000 en
+Maligno.
 
 <img src="outputs/figures/sensibilidad_especificidad.png" width="720">
 
 **`sensibilidad_especificidad.png`** — Gráfico de barras agrupadas:
-sensibilidad y especificidad por clase, para los 4 modelos, en 3
-paneles (uno por clase). **Resultado:** es la figura que expone con
-más claridad el colapso de CNN + Augmentation — en el panel "Benigno"
-su barra de sensibilidad directamente no existe (0.00); en el panel
-"Maligno" es su barra de especificidad la que no existe (0.00). Verlas
-lado a lado dentro del mismo panel deja claro que un modelo puede tener
-sensibilidad o especificidad perfectas por razones triviales (no
-predecir nunca / predecir siempre una clase) y que ninguna de las dos
-métricas por sí sola cuenta la historia completa.
+sensibilidad y especificidad por clase, para los 6 modelos (5 de Keras +
+SVM), en 3 paneles (uno por clase). **Resultado:** es la figura que
+expone con más claridad el colapso de CNN + Augmentation y CNN + CutMix
+— en el panel "Benigno" sus barras de sensibilidad directamente no
+existen (0.00); en el panel "Maligno" son sus barras de especificidad
+las que no existen (0.00), y ambos modelos son visualmente
+indistinguibles entre sí en los tres paneles. Verlas lado a lado dentro
+del mismo panel deja claro que un modelo puede tener sensibilidad o
+especificidad perfectas por razones triviales (no predecir nunca /
+predecir siempre una clase) y que ninguna de las dos métricas por sí
+sola cuenta la historia completa.
 
 #### Explicabilidad
 
@@ -1025,6 +1082,82 @@ este experimento, y ambos resultados negativos son evidencia válida
 para el TFM sobre los límites de una segmentación clásica (no
 aprendida) en este problema.
 
+### 9. CutMix reproduce el colapso de CNN + Augmentation número por número: no es un problema del tipo de aumento
+
+El resumen de la propuesta oficial del TFM menciona explícitamente
+"técnicas avanzadas de aumento de datos, como el intercambio de
+píxeles" — CutMix (Yun et al., 2019) es exactamente eso: recorta una
+región rectangular aleatoria de una imagen del batch y la pega sobre
+otra, mezclando las etiquetas en la misma proporción que el área
+intercambiada. Se implementó en `04b_train_cnn_cutmix.py`, con la
+**misma arquitectura, optimizador, loss, presupuesto de épocas,
+paciencia y `class_weight`** que `04_train_cnn_aug.py`, para que la
+comparación fuera limpia (ver
+[¿Por qué no todos entrenaron el mismo número de épocas?](#por-qué-no-todos-entrenaron-el-mismo-número-de-épocas)
+para la lista completa de hiperparámetros compartidos).
+
+**La hipótesis a contrastar:** el aumento estándar (flip/rotación/zoom/
+contraste) hace colapsar al modelo a predecir siempre "Maligno"
+(exactitud 50.91%, [Hallazgo #3](#hallazgos-y-análisis)). CutMix mezcla
+las etiquetas de forma continua en vez de transformar geométricamente
+cada imagen por separado — ¿evita ese colapso?
+
+**Respuesta: no.** El resultado es prácticamente idéntico, cifra por
+cifra:
+
+<img src="outputs/figures/muestras_cutmix.png" width="620">
+
+`muestras_cutmix.png` confirma que la técnica está bien implementada:
+el parche rectangular intercambiado es visible a simple vista y la
+etiqueta mezclada corresponde exactamente a la proporción de área
+intercambiada.
+
+<img src="outputs/figures/curvas_cnn_cutmix.png" width="620">
+
+El entrenamiento se detiene en la época 13 (`EarlyStopping`, paciencia
+12). La pérdida de validación **nunca mejora respecto a su valor en la
+época 1** (1.0476) — de hecho sube y luego solo vuelve a bajar hasta
+casi ese mismo nivel, sin superarlo. Lo más revelador: la exactitud de
+validación llega a un pico de **73.3% en la época 9**, muy por encima
+del resto del entrenamiento — pero `EarlyStopping` vigila `val_loss`,
+no `val_accuracy`, y la pérdida de validación de la época 9 (1.0613) es
+más alta que la de la época 1, así que `restore_best_weights` descarta
+ese pico y se queda con los pesos de una época muy temprana, antes de
+que el modelo aprendiera a discriminar clases de forma real.
+
+<img src="outputs/figures/confusion_matrix_cnn_cutmix.png" width="480">
+
+El resultado final: **100% de las 165 imágenes de test predichas como
+"Maligno"** — el mismo colapso exacto que CNN + Augmentation, celda por
+celda de la matriz de confusión.
+
+| Métrica | CNN + Augmentation | CNN + CutMix |
+|---|---:|---:|
+| Exactitud | 0.5091 | 0.5091 |
+| AUC-ROC | 0.7233 | 0.7175 |
+| F1 Macro | 0.2249 | 0.2249 |
+| Especificidad Maligno | 0.00 | 0.00 |
+
+**Interpretación:** el hecho de que dos técnicas de aumento de datos
+completamente distintas (transformación geométrica por imagen vs.
+mezcla de píxeles y etiquetas entre pares de imágenes) lleguen al
+**mismo punto muerto**, con la **misma métrica de fallo** (0.5091 =
+proporción exacta de la clase mayoritaria "Maligno" en el test) y
+además con la pérdida de validación estancada desde la primera época
+en ambos casos, apunta a que el colapso no es un problema del tipo de
+aumento en sí, sino de cómo interactúan el tamaño reducido del dataset
+(767 imágenes de entrenamiento), el desbalance de clases y el criterio
+de selección del mejor modelo (`EarlyStopping(monitor="val_loss")`)
+con **cualquier** técnica que introduzca suficiente variabilidad en el
+entrenamiento — el modelo encuentra el atajo de predecir siempre la
+clase mayoritaria porque, bajo esas condiciones, es la estrategia que
+minimiza la pérdida de validación más rápido que aprender a discriminar
+de verdad. Es un resultado negativo, pero es exactamente el tipo de
+evidencia metodológica que la propuesta del TFM pide documentar: probar
+la técnica de aumento avanzado explícitamente mencionada en el resumen
+y reportar con honestidad que, en este dataset y con esta arquitectura,
+tampoco resuelve el problema que sí resuelve transfer learning.
+
 ## Limitaciones y consideraciones éticas
 
 1. **Posible fuga de datos (*data leakage*) por ausencia de identificador de
@@ -1087,16 +1220,21 @@ aprendida) en este problema.
   metadatos DICOM originales del NCCD/IOSH, no solo a las imágenes
   exportadas), y volver a medir todas las métricas — se espera una caída
   sustancial de exactitud, especialmente en la línea base SVM.
-- Investigar específicamente **por qué el augmentation en tiempo real
-  sigue causando colapso en la CNN + Augmentation** aunque la misma
-  arquitectura sin augmentation (CNN Base) ya no colapsa con los mismos
-  hiperparámetros (ver Hallazgos #3) — por ejemplo, probar con
-  augmentation aún más suave, o aplicado solo a partir de cierta época
-  (*curriculum*), en vez de desde el principio.
+- Investigar específicamente **por qué el aumento de datos en tiempo real
+  sigue causando colapso en la CNN**, ya sea con augmentation geométrico
+  o con CutMix, aunque la misma arquitectura sin ningún aumento (CNN
+  Base) no colapsa con los mismos hiperparámetros (ver Hallazgos #3 y
+  #9) — por ejemplo, probar con augmentation/CutMix más suave (`alpha`
+  más bajo), aplicado solo a partir de cierta época (*curriculum*) en
+  vez de desde el principio, o cambiando `EarlyStopping` para vigilar
+  `val_accuracy` en vez de `val_loss` (el Hallazgo #9 muestra un pico de
+  73.3% de exactitud de validación en la época 9 de CutMix que se
+  descarta precisamente porque el monitor es `val_loss`).
 - Probar **umbrales de decisión por clase** en vez de `argmax` puro para
-  la CNN + Augmentation: su AUC-ROC (0.728) sugiere que el modelo sí
-  aprende información útil aunque la decisión final colapse, lo que podría
-  indicar que el problema está más en el umbral que en el modelo en sí.
+  la CNN + Augmentation y la CNN + CutMix: sus AUC-ROC (0.723 y 0.718)
+  sugieren que ambos modelos sí aprenden información útil aunque la
+  decisión final colapse, lo que podría indicar que el problema está más
+  en el umbral que en el modelo en sí.
 - Configurar soporte de GPU real para este proyecto (WSL2, o el plugin
   DirectML de Microsoft para Windows) — permitiría iterar mucho más rápido
   sobre estas hipótesis; en esta ronda se intentó pero la instalación de
