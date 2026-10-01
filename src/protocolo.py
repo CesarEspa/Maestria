@@ -9,6 +9,7 @@ Numeración de secciones = numeración del prompt de la tutora (Tarea 2).
 """
 import importlib
 import json
+import os
 import time
 
 import numpy as np
@@ -35,6 +36,13 @@ for _d in (EXPERIMENTOS_DIR, RUNS_DIR):
 
 LABEL_TO_FOLDER = dict(zip(CLASS_LABELS, CLASS_NAMES))
 LABEL_TO_IDX = {lbl: i for i, lbl in enumerate(CLASS_LABELS)}
+
+# Techos de épocas (2.5). Sobreescribibles por variable de entorno para
+# pruebas rápidas de la infraestructura, igual que TFM_EPOCHS_OVERRIDE en
+# 03/04/04b/05_train_*.py — no se usa en las ejecuciones reales del protocolo.
+MAX_EPOCHS_CNN = int(os.environ.get("TFM_MAX_EPOCHS_CNN", 80))
+MAX_EPOCHS_FASE1 = int(os.environ.get("TFM_MAX_EPOCHS_FASE1", 20))
+MAX_EPOCHS_FASE2 = int(os.environ.get("TFM_MAX_EPOCHS_FASE2", 60))
 
 
 # ════════════════════════════════ 2.1 Datos ════════════════════════════════
@@ -436,7 +444,7 @@ def entrenar(escenario, hp, seed, tipo_particion="grupos", segmentado=False):
     if arquitectura == "cnn":
         model = cnn_propia(hp["lr"], hp["dropout_bloques"])
         history = model.fit(
-            train_ds, validation_data=(X_val, y_val_cat), epochs=80,
+            train_ds, validation_data=(X_val, y_val_cat), epochs=MAX_EPOCHS_CNN,
             class_weight=class_weight_arg, callbacks=_callbacks_f1(X_val, y_val, patience=15),
             verbose=1,
         )
@@ -445,7 +453,7 @@ def entrenar(escenario, hp, seed, tipo_particion="grupos", segmentado=False):
     elif arquitectura == "efficientnet":
         model, base_model = efficientnet(hp["lr_ajuste"], hp["capas_descongeladas"])
         history1 = model.fit(
-            train_ds, validation_data=(X_val, y_val_cat), epochs=20,
+            train_ds, validation_data=(X_val, y_val_cat), epochs=MAX_EPOCHS_FASE1,
             class_weight=class_weight_arg, callbacks=_callbacks_f1(X_val, y_val, patience=15),
             verbose=1,
         )
@@ -453,7 +461,7 @@ def entrenar(escenario, hp, seed, tipo_particion="grupos", segmentado=False):
 
         activar_fine_tuning(model, base_model, hp["lr_ajuste"], hp["capas_descongeladas"])
         history2 = model.fit(
-            train_ds, validation_data=(X_val, y_val_cat), epochs=60,
+            train_ds, validation_data=(X_val, y_val_cat), epochs=MAX_EPOCHS_FASE2,
             class_weight=class_weight_arg, callbacks=_callbacks_f1(X_val, y_val, patience=15),
             verbose=1,
         )
