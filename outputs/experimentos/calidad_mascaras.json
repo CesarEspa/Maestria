@@ -1,0 +1,34 @@
+{
+  "total": 1097,
+  "sospechosas_total": 68,
+  "toca_borde_total": 10,
+  "umbral_area_min": 0.05,
+  "umbral_area_max": 0.6,
+  "umbral_componentes": 2,
+  "por_clase": {
+    "Benigno": {
+      "n": 120,
+      "sospechosas": 5,
+      "toca_borde": 0,
+      "area_media": 0.09761124176232992,
+      "area_mediana": 0.0912288743622449,
+      "componentes_media": 1.7416666666666667
+    },
+    "Maligno": {
+      "n": 561,
+      "sospechosas": 37,
+      "toca_borde": 9,
+      "area_media": 0.13556946215986396,
+      "area_mediana": 0.11501514668367346,
+      "componentes_media": 1.6666666666666667
+    },
+    "Normal": {
+      "n": 416,
+      "sospechosas": 26,
+      "toca_borde": 1,
+      "area_media": 0.09370860724097331,
+      "area_mediana": 0.08776108099489796,
+      "componentes_media": 1.6658653846153846
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "n_epocas_medidas": 2,
+  "n_train": 784,
+  "n_val": 157,
+  "cnn_seg_por_epoca": 91.76475083827972,
+  "efficientnet_seg_por_epoca": 27.14663279056549
+}
