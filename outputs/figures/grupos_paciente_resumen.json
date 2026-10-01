@@ -1,0 +1,132 @@
+{
+  "n_imagenes": 1097,
+  "grupos_total": 83,
+  "grupos_por_clase": {
+    "Benigno": 15,
+    "Maligno": 30,
+    "Normal": 38
+  },
+  "umbral_fusion": 0.97,
+  "casos_documentados": {
+    "Bengin cases": 15,
+    "Malignant cases": 40,
+    "Normal cases": 55
+  },
+  "correlacion_consecutiva_mediana": {
+    "Benigno": 0.970744788646698,
+    "Maligno": 0.9877991676330566,
+    "Normal": 0.9910913705825806
+  },
+  "por_semilla": {
+    "0": {
+      "n_train_val_test": [
+        784,
+        157,
+        156
+      ],
+      "test_por_clase": [
+        16,
+        80,
+        60
+      ],
+      "imagen": {
+        "gemelo_095": 0.9454545454545454,
+        "gemelo_098": 0.7696969696969697,
+        "mediana": 0.9917008280754089
+      },
+      "grupos": {
+        "gemelo_095": 0.0,
+        "gemelo_098": 0.0,
+        "mediana": 0.838479220867157
+      }
+    },
+    "1": {
+      "n_train_val_test": [
+        784,
+        157,
+        156
+      ],
+      "test_por_clase": [
+        18,
+        79,
+        59
+      ],
+      "imagen": {
+        "gemelo_095": 0.9272727272727272,
+        "gemelo_098": 0.7575757575757576,
+        "mediana": 0.9913188219070435
+      },
+      "grupos": {
+        "gemelo_095": 0.00641025641025641,
+        "gemelo_098": 0.0,
+        "mediana": 0.8265482783317566
+      }
+    },
+    "2": {
+      "n_train_val_test": [
+        784,
+        157,
+        156
+      ],
+      "test_por_clase": [
+        16,
+        80,
+        60
+      ],
+      "imagen": {
+        "gemelo_095": 0.9090909090909091,
+        "gemelo_098": 0.7575757575757576,
+        "mediana": 0.9901573061943054
+      },
+      "grupos": {
+        "gemelo_095": 0.00641025641025641,
+        "gemelo_098": 0.0,
+        "mediana": 0.8373832702636719
+      }
+    },
+    "3": {
+      "n_train_val_test": [
+        782,
+        158,
+        157
+      ],
+      "test_por_clase": [
+        18,
+        80,
+        59
+      ],
+      "imagen": {
+        "gemelo_095": 0.9454545454545454,
+        "gemelo_098": 0.7818181818181819,
+        "mediana": 0.9919832348823547
+      },
+      "grupos": {
+        "gemelo_095": 0.0,
+        "gemelo_098": 0.0,
+        "mediana": 0.8417600393295288
+      }
+    },
+    "4": {
+      "n_train_val_test": [
+        782,
+        158,
+        157
+      ],
+      "test_por_clase": [
+        17,
+        80,
+        60
+      ],
+      "imagen": {
+        "gemelo_095": 0.896969696969697,
+        "gemelo_098": 0.6666666666666666,
+        "mediana": 0.9905436038970947
+      },
+      "grupos": {
+        "gemelo_095": 0.025477707006369428,
+        "gemelo_098": 0.01910828025477707,
+        "mediana": 0.834712028503418
+      }
+    }
+  }
+}
