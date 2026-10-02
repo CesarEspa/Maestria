@@ -473,3 +473,38 @@ modelo recomendado si cambia (Grad-CAM++/Score-CAM de M4 no se tocan si M4 no ca
 `RESUMEN_PARA_DOCUMENTO.md` se actualiza al final con todos los resultados corregidos.
 
 ---
+
+## DETENIDO — la rejilla de M1 corregida no cumple el criterio de aceptación (2026-10-02)
+
+`src/08d_correccion_schedule_cnn.py` ejecutó la rejilla de M1 (4 configuraciones,
+callbacks corregidos sin `ReduceLROnPlateau`) y se detuvo automáticamente, tal como
+estaba diseñado, sin continuar con M2/M3. Resultado completo:
+
+| Configuración | F1 macro val | Loss mínima entrenamiento | ¿Cruza loss&lt;1.0? | Tiempo |
+|---|---:|---:|---|---:|
+| lr=3e-4, dropout=0.25 | 0.3789 | 1.060 (nunca baja de 1.0) | No | 51.1 min |
+| lr=3e-4, dropout=0.40 | 0.3789 | 1.079 (nunca baja de 1.0) | No | 81.5 min |
+| **lr=1e-4, dropout=0.25 (ganadora)** | **0.5855** | **0.666** | Sí, en la **época 27** | 64.7 min |
+| lr=1e-4, dropout=0.40 | 0.5855 | 0.664 | Sí (no verificado el nº de época exacto) | 80.5 min |
+
+**Lectura importante, no solo "falló":** con `lr=3e-4` el modelo sigue genuinamente
+estancado (loss nunca baja de 1.0, igual que antes del fix) — ese LR parece
+sencillamente demasiado alto para esta arquitectura con `LayerNormalization`
+(recordar que el resto del proyecto ya había bajado de 1e-3 a 1e-4 por el mismo
+motivo de inestabilidad). Con `lr=1e-4` el modelo **sí aprende de verdad** esta vez:
+loss de entrenamiento baja hasta 0.666, exactitud de entrenamiento hasta ~0.79,
+F1 macro de validación 0.5855 (muy por encima del 0.3789 de un colapso). El fix
+funciona — pero la configuración ganadora cruza el umbral de loss&lt;1.0 en la
+**época 27**, dos épocas después del límite de 25 fijado en el criterio de
+aceptación. Por ese margen estrecho, el criterio formal no se cumple.
+
+**Siguiendo la instrucción explícita del usuario ("si ninguna lo logra, detente y
+avísame"), el proceso se detiene aquí sin continuar con M2, M3, ni con las semillas
+1 y 2.** Los runs del grid (los 4) quedan en `outputs/experimentos/runs/` (no se
+mueven a descartados — a diferencia de los runs con el bug de schedule, estos sí
+entrenaron correctamente, la discusión es solo sobre si cumplen el criterio exacto
+de aceptación, no sobre si son válidos). Pendiente de decisión del usuario: aceptar
+la configuración ganadora tal cual (el aprendizaje es real, solo 2 épocas fuera del
+límite nominal), relajar el límite de época, o algún otro ajuste.
+
+---
