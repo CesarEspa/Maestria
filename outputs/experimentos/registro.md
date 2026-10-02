@@ -347,6 +347,34 @@ Archivos: `outputs/experimentos/explicabilidad.csv`, `outputs/gradcam/gradcam_M1
 Commit y push de la Tarea 6 (incluye el fix de `10_explicabilidad.py`). Se continúa
 automáticamente con la Tarea 7 (última).
 
+---
+
+## Tarea 7 — Tablas descriptivas, figura de preprocesamiento y entorno (completada 2026-10-02)
+
+Sin incidencias, completada en menos de 1 minuto (no entrena nada). Las 3 partes ya
+se habían probado parcialmente durante la Tarea 2 (antes de que existiera
+`hiperparametros_finales.json`); esta ejecución final regenera
+`imagenes_por_subconjunto.csv` con las columnas `muestras_vistas_M1/M2/M3` ya
+pobladas correctamente para la semilla 0 (21,952 muestras vistas cada una — 784
+imágenes de entrenamiento × 28 épocas efectivas, igual para los 3 porque las 3
+configuraciones finales de M1/M2/M3 se entrenaron con el mismo `lr`/`dropout_bloques`
+elegidos para M1 en la Tarea 3 y pararon en el mismo número de épocas). Conteos de
+imágenes y grupos por subconjunto verificados: suman 83 grupos exactos en cada
+semilla (train+val+test), consistente con la Tarea 1.
+
+**Entorno (`entorno.json`):** Windows 10, AMD64 (6 núcleos físicos / 12 lógicos),
+15.2 GB RAM, sin GPU utilizable por TensorFlow (confirmado `gpu_detectada_por_tensorflow: []`).
+Python 3.11.9, TensorFlow 2.17.1, Keras 3.15.1, resto de versiones en el archivo.
+
+**Figura `pipeline_preprocesamiento.png`:** revisada visualmente durante la
+preparación de la Tarea 2 — las 6 columnas (original, redimensionada+normalizada,
+máscara, segmentada, aumento geométrico, CutMix) correctas para las 3 clases.
+
+**Con esto, las 7 tareas del protocolo corregido están completas.** Quedan los pasos
+"Al terminar" del prompt: actualizar README.md y PROYECTO_CLAUDE_CONTEXTO.txt
+(separando ensayos preliminares del protocolo final), escribir
+`RESUMEN_PARA_DOCUMENTO.md`, y el commit/push final.
+
 **Archivos generados:**
 - `src/protocolo.py`
 - `outputs/splits/imagenes_224.npz`
