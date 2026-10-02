@@ -12,6 +12,8 @@ outputs/progress/
 # para el documento), no los pesos — reproducibles reejecutando entrenar().
 outputs/experimentos/runs/*/modelo.keras
 outputs/experimentos/runs/*/modelo.joblib
+outputs/experimentos/runs_descartados_schedule/*/modelo.keras
+outputs/experimentos/runs_descartados_schedule/*/modelo.joblib
 
 # Python
 __pycache__/

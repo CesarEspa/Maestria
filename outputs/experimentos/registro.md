@@ -384,3 +384,92 @@ máscara, segmentada, aumento geométrico, CutMix) correctas para las 3 clases.
 - `outputs/figures/control_calidad_mascaras.png`
 
 ---
+
+## Incidencia: schedule de la tasa de aprendizaje y criterio de selección (2026-10-02)
+
+Tras entregar el `RESUMEN_PARA_DOCUMENTO.md` de las 7 tareas, el usuario trasladó dos
+correcciones adicionales señaladas por la tutora sobre el prompt original (no son
+errores de la implementación de este protocolo, son ajustes al propio diseño
+experimental, detectados al revisar los resultados):
+
+### 1. M1, M2 y M3 nunca llegaron a entrenar de verdad
+
+**Diagnóstico de la tutora, confirmado al revisar `historial.csv` de los 9 runs:** la
+pérdida de entrenamiento nunca bajó de ln(3)≈1.0986 (el valor de un clasificador que no
+aprendió nada, con 3 clases) y la exactitud de entrenamiento no superó 0.53 en ningún
+run. **Causa:** `ReduceLROnPlateau(monitor="val_f1_macro", patience=5)` reducía el LR
+hasta ~1e-6 antes de que la CNN saliera de su meseta inicial de aprendizaje — en el
+protocolo preliminar (`curvas_cnn_base.png`, `outputs/legacy_particion_imagen/figures/`),
+a LR constante 1e-4 la CNN salía de esa meseta hacia la época 11; con `val_f1_macro`
+(una métrica discontinua, no se mueve suavemente como `val_loss`) el `ReduceLROnPlateau`
+disparaba reducciones de LR mucho antes de que el modelo tuviera oportunidad real de
+aprender. **Esto invalida la conclusión de la sección 3 del `RESUMEN_PARA_DOCUMENTO.md`
+anterior** ("el colapso persiste con F1 macro") — no era un colapso genuino del
+modelo/arquitectura, era un problema de la tasa de aprendizaje apagándose demasiado
+pronto. Esa conclusión se retira.
+
+**Corrección aplicada (solo familia CNN — M1/M2/M3; M4, M5 y SVM no se tocan, no
+tienen este problema):**
+- `src/protocolo.py`: la función `_callbacks_f1` se bifurcó en
+  `_callbacks_f1_efficientnet` (sin cambios, para M4/M5) y `_callbacks_f1_cnn` (nueva,
+  para M1/M2/M3): **sin `ReduceLROnPlateau`**; `EarlyStopping(monitor="val_f1_macro",
+  mode="max", patience=15, start_from_epoch=15, restore_best_weights=True)`.
+  `MAX_EPOCHS_CNN` bajado de 80 a 60.
+- Los 12 runs afectados (M1 ×6, M2 ×3, M3 ×3 — las 3 semillas de cada uno) se movieron
+  (no se borraron) de `outputs/experimentos/runs/` a
+  `outputs/experimentos/runs_descartados_schedule/` con `git mv` para los archivos ya
+  versionados (`historial.csv`, `hp.json`, `tiempo.json`, `pred_val.npz`,
+  `pred_test.npz`) y `mv` normal para `modelo.keras` (no versionado). `.gitignore`
+  actualizado para excluir también los pesos de la carpeta de descartados.
+- Validado con un entrenamiento corto de prueba (3 épocas, nombre `TESTFIX`, limpiado
+  después) que los nuevos callbacks realmente no incluyen `ReduceLROnPlateau` y que
+  `entrenar()` sigue funcionando correctamente sin la columna `learning_rate` en
+  `historial.csv` (esa columna la generaba el callback que se quitó; ningún script
+  del pipeline depende de ella, confirmado por grep).
+- Nuevo script `src/08d_correccion_schedule_cnn.py`: repite la rejilla de M1 (semilla
+  0) con los callbacks corregidos; **criterio de aceptación explícito**: la pérdida de
+  entrenamiento de la configuración ganadora debe bajar de 1.0 antes de la época 25 —
+  si no lo logra, el script se detiene (`sys.exit(1)`) sin continuar con M2/M3/M4/M5.
+  Si pasa: entrena M2 y M3 con esa configuración; recalcula el aumento ganador de M4
+  entre los M2/M3 nuevos (si cambia respecto al elegido antes, reentrena la rejilla de
+  M4 y M5 con el nuevo aumento; si no cambia, los conserva tal cual); entrena M1/M2/M3
+  en semillas 1 y 2; actualiza `hiperparametros_finales.json` y regenera las curvas.
+
+### 2. El criterio de selección del modelo recomendado era defectuoso
+
+La sensibilidad Maligno sola, sin ningún control de especificidad, la maximiza
+trivialmente un modelo que predice "Maligno" para todo — exactamente lo que le pasó a
+M3 con el criterio anterior (ver Tarea 4). **Nuevo criterio:** mayor **índice de
+Youden de la clase Maligno** en VALIDACIÓN (sensibilidad Maligno + especificidad
+Maligno − 1), media de las 3 semillas, entre M1-M5; desempate si la diferencia es
+menor de 0.02, por F1 macro medio de validación. Un clasificador constante tiene
+Youden = 0 exactamente (si predice siempre Maligno: sens=1, esp=0, Youden=1+0−1=0),
+así que este criterio ya no premia el colapso trivial.
+
+`outputs/experimentos/seleccion_modelo_recomendado.json` (el escrito con el criterio
+viejo) se renombra a `seleccion_modelo_recomendado_v1_descartada.json` — se conserva
+como evidencia de la propia lección metodológica (documentada en el
+`RESUMEN_PARA_DOCUMENTO.md` anterior, sección 2). El nuevo se escribe con el criterio
+de Youden, **antes** de recalcular ninguna métrica de prueba.
+
+**Nota de honestidad metodológica, tal como pidió el usuario:** este cambio de
+criterio ocurre **después** de haber mirado una vez las métricas de prueba (la Tarea 5
+ya se ejecutó con el criterio v1 antes de detectar este problema). Es una excepción
+real al principio de "nunca mirar el test antes de fijar el criterio" que rige el
+resto del protocolo, y se documenta como tal en vez de disimularla: el cambio no se
+basa en qué modelo convenía más a la vista de los resultados de test (de hecho, bajo
+el criterio v1 el resultado de test ya mostraba a M3 como peor que M4/M5/SVM_grupos
+por McNemar, así que no hay incentivo oculto para "mejorar la cifra" cambiando el
+criterio), sino en que el criterio v1 era estructuralmente defectuoso independientemente
+de los datos — un clasificador constante siempre lo habría maximizado trivialmente,
+en cualquier dataset. Aun así, se deja constancia explícita de la secuencia temporal
+real para que quien lea el TFM pueda juzgarlo por sí mismo.
+
+### 3. Qué se repite tras estas correcciones
+
+La Tarea 5 completa (métricas, IC95%, McNemar contra el nuevo modelo recomendado,
+errores maligno, las 4 figuras) y, de la Tarea 6, solo el Grad-CAM de M1 (nuevo) y del
+modelo recomendado si cambia (Grad-CAM++/Score-CAM de M4 no se tocan si M4 no cambió).
+`RESUMEN_PARA_DOCUMENTO.md` se actualiza al final con todos los resultados corregidos.
+
+---

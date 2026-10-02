@@ -40,7 +40,10 @@ LABEL_TO_IDX = {lbl: i for i, lbl in enumerate(CLASS_LABELS)}
 # Techos de épocas (2.5). Sobreescribibles por variable de entorno para
 # pruebas rápidas de la infraestructura, igual que TFM_EPOCHS_OVERRIDE en
 # 03/04/04b/05_train_*.py — no se usa en las ejecuciones reales del protocolo.
-MAX_EPOCHS_CNN = int(os.environ.get("TFM_MAX_EPOCHS_CNN", 80))
+# MAX_EPOCHS_CNN bajado de 80 a 60 (incidencia "schedule de la tasa de
+# aprendizaje", ver registro.md): con el nuevo EarlyStopping
+# start_from_epoch=15 y sin ReduceLROnPlateau, 60 es el techo pedido.
+MAX_EPOCHS_CNN = int(os.environ.get("TFM_MAX_EPOCHS_CNN", 60))
 MAX_EPOCHS_FASE1 = int(os.environ.get("TFM_MAX_EPOCHS_FASE1", 20))
 MAX_EPOCHS_FASE2 = int(os.environ.get("TFM_MAX_EPOCHS_FASE2", 60))
 
@@ -297,13 +300,31 @@ class F1MacroValidacion(keras.callbacks.Callback):
             logs["val_sens_benigno"], logs["val_sens_maligno"], logs["val_sens_normal"] = map(float, sens)
 
 
-def _callbacks_f1(X_val, y_val, patience=15):
+def _callbacks_f1_efficientnet(X_val, y_val, patience=15):
+    """EfficientNet (M4/M5) — SIN CAMBIOS (no afectada por la incidencia de
+    schedule de LR, ver registro.md 'Incidencia: schedule de la tasa de
+    aprendizaje y criterio de selección')."""
     return [
         F1MacroValidacion(X_val, y_val, batch_size=BATCH_SIZE),
         keras.callbacks.EarlyStopping(monitor="val_f1_macro", mode="max", patience=patience,
                                        start_from_epoch=5, restore_best_weights=True),
         keras.callbacks.ReduceLROnPlateau(monitor="val_f1_macro", mode="max",
                                            factor=0.5, patience=5, min_lr=1e-6),
+    ]
+
+
+def _callbacks_f1_cnn(X_val, y_val):
+    """CNN propia (M1/M2/M3) — CORREGIDO (incidencia 'schedule de la tasa de
+    aprendizaje'): SIN ReduceLROnPlateau. Con val_f1_macro + patience=5, el
+    LR caía a ~1e-6 antes de que la CNN saliera de la meseta inicial (loss
+    de entrenamiento nunca bajaba de ln(3)≈1.0986) — confirmado comparando
+    con curvas_cnn_base.png del protocolo preliminar, donde a LR constante
+    1e-4 la CNN sale de la meseta hacia la época 11. EarlyStopping con
+    start_from_epoch=15 (antes 5) le da más margen a esa meseta inicial."""
+    return [
+        F1MacroValidacion(X_val, y_val, batch_size=BATCH_SIZE),
+        keras.callbacks.EarlyStopping(monitor="val_f1_macro", mode="max", patience=15,
+                                       start_from_epoch=15, restore_best_weights=True),
     ]
 
 
@@ -445,7 +466,7 @@ def entrenar(escenario, hp, seed, tipo_particion="grupos", segmentado=False):
         model = cnn_propia(hp["lr"], hp["dropout_bloques"])
         history = model.fit(
             train_ds, validation_data=(X_val, y_val_cat), epochs=MAX_EPOCHS_CNN,
-            class_weight=class_weight_arg, callbacks=_callbacks_f1(X_val, y_val, patience=15),
+            class_weight=class_weight_arg, callbacks=_callbacks_f1_cnn(X_val, y_val),
             verbose=1,
         )
         historiales.append(("unica", history))
@@ -454,7 +475,7 @@ def entrenar(escenario, hp, seed, tipo_particion="grupos", segmentado=False):
         model, base_model = efficientnet(hp["lr_ajuste"], hp["capas_descongeladas"])
         history1 = model.fit(
             train_ds, validation_data=(X_val, y_val_cat), epochs=MAX_EPOCHS_FASE1,
-            class_weight=class_weight_arg, callbacks=_callbacks_f1(X_val, y_val, patience=15),
+            class_weight=class_weight_arg, callbacks=_callbacks_f1_efficientnet(X_val, y_val, patience=15),
             verbose=1,
         )
         historiales.append(("fase1", history1))
@@ -462,7 +483,7 @@ def entrenar(escenario, hp, seed, tipo_particion="grupos", segmentado=False):
         activar_fine_tuning(model, base_model, hp["lr_ajuste"], hp["capas_descongeladas"])
         history2 = model.fit(
             train_ds, validation_data=(X_val, y_val_cat), epochs=MAX_EPOCHS_FASE2,
-            class_weight=class_weight_arg, callbacks=_callbacks_f1(X_val, y_val, patience=15),
+            class_weight=class_weight_arg, callbacks=_callbacks_f1_efficientnet(X_val, y_val, patience=15),
             verbose=1,
         )
         historiales.append(("fase2", history2))
