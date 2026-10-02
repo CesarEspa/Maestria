@@ -1,0 +1,15 @@
+{
+  "escenario": "M2",
+  "hp": {
+    "arquitectura": "cnn",
+    "aumento": "geometrico",
+    "lr": 0.0001,
+    "dropout_bloques": 0.25
+  },
+  "seed": 0,
+  "tipo_particion": "grupos",
+  "segmentado": false,
+  "epocas_efectivas": [
+    28
+  ]
+}

@@ -122,6 +122,64 @@ actualizará si la estimación se desvía mucho de lo real.
 **Conclusión:** Tarea 2 completada en su totalidad. Se continúa con la Tarea 3
 (búsqueda de hiperparámetros, semilla 0, partición por grupos).
 
+**Incidencia técnica (2026-10-01):** el primer lanzamiento de la Tarea 3 (proceso en
+segundo plano gestionado por el entorno de ejecución del asistente) fue detenido
+automáticamente a los ~30 minutos. A ese ritmo (~90 s/época), el primer entrenamiento
+(M1, lr=3e-4, dropout=0.25) no llegó a completar sus 80 épocas máximas (se detuvo a
+mitad de la época 23) y, como `entrenar()` solo escribe `modelo.keras` al terminar
+`model.fit()` con éxito (sin checkpointing intra-entrenamiento), no se guardó nada —
+el directorio del run quedó creado pero vacío. **Ningún entrenamiento de la Tarea 3
+sobrevivió al primer lanzamiento**, no solo 1 como se anotó inicialmente aquí (error
+de verificación: se comprobó la existencia de la carpeta del run, no de `modelo.keras`
+dentro de ella). Corregido relanzando el proceso desacoplado por completo de esa
+gestión (`nohup ... > log 2>&1 < /dev/null & disown`), de modo que el proceso de
+Python vive de forma independiente en el sistema operativo y no está sujeto a ese
+límite de tiempo; el progreso se verifica leyendo el log y el contenido de
+`outputs/experimentos/runs/<nombre>/modelo.keras` (no solo la carpeta) periódicamente.
+Todos los procesos largos del resto del protocolo (Tareas 3-6) se lanzan con este
+mismo patrón a partir de ahora. Gracias a la reanudabilidad de `entrenar()`, el
+relanzamiento retomó automáticamente desde el primer entrenamiento sin intervención
+manual.
+
+**Tarea 3 completada (2026-10-02).** Los 11 entrenamientos terminaron sin más
+incidencias. Tiempos reales muy por debajo de la estimación inicial: CNN
+29.8-49.1 min (media ~38 min, no ~53.5 min estimados); EfficientNet 17.4-24.2 min
+(¡mucho más rápido que los ~49 min estimados! El `EarlyStopping` por F1 macro corta
+mucho antes de lo que suponía la estimación basada en 2 épocas sin parada). Duración
+real total de la Tarea 3: ~6h20min desde el relanzamiento (vs. ~9.4h estimadas).
+
+Resultados de la búsqueda (`busqueda_hiperparametros.csv`, `hiperparametros_finales.json`):
+
+| Escenario | Config. elegida | F1 macro val | Sens.Benigno val | Sens.Maligno val | Sens.Normal val |
+|---|---|---:|---:|---:|---:|
+| M1 (CNN, sin aumento) | lr=1e-4, dropout=0.25 | 0.3789 | 0.00 | 0.34 | 1.00 |
+| M2 (CNN + geométrico) | (hp de M1) | 0.4167 | 0.00 | 0.43 | 1.00 |
+| M3 (CNN + CutMix) | (hp de M1) | 0.3789 | 0.00 | 0.34 | 1.00 |
+| M4 (EfficientNet) | capas=20, lr_ajuste=1e-4 | 0.5282 | 0.63 | 0.38 | 0.80 |
+| M5 (EfficientNet + segmentado) | (hp de M4) | **0.6074** | 0.56 | **0.74** | 0.61 |
+
+**Hallazgo importante — se repite el patrón de colapso de la Fase 10 anterior, ahora
+bajo partición por grupos:** las 4 configuraciones de M1 dan EXACTAMENTE la misma
+F1 macro, sensibilidad por clase y patrón (sens_benigno=0.00, predice mayoritariamente
+"Normal") sin importar lr/dropout — y M3 (CutMix) reproduce esos mismos números de
+forma idéntica a M1. La curva de aprendizaje de M1 (`curvas_M1.png`) confirma
+inestabilidad real: F1 macro de validación oscila entre ~0.06 y ~0.38 sin converger, y
+la época restaurada por `EarlyStopping` es la época 1 (muy temprana). Es decir, el
+problema de colapso/inestabilidad de las rondas anteriores NO se debía únicamente al
+criterio `monitor="val_loss"` ni a la partición con fuga — persiste con partición por
+grupos de paciente y parada por F1 macro. Se documentará con el mismo rigor en el
+resumen final; es un resultado negativo válido, no un error del proceso.
+
+**Hallazgo positivo:** a diferencia de la Fase 10 anterior (donde la segmentación NO
+mejoró el modelo), bajo este protocolo M5 (EfficientNet + segmentación) da el mejor
+resultado de TODA la búsqueda (F1 macro 0.6074, sensibilidad Maligno 0.74, la más alta
+de los 5 escenarios). Sujeto a confirmación con las 3 semillas en la Tarea 5 antes de
+sacar conclusiones definitivas — esto es solo semilla 0, validación.
+
+Commit y push de la Tarea 3 hechos por separado. Se continúa automáticamente con la
+Tarea 4 (entrenamiento final multisemilla), sin esperar confirmación, según lo
+indicado por el usuario.
+
 **Archivos generados:**
 - `src/protocolo.py`
 - `outputs/splits/imagenes_224.npz`

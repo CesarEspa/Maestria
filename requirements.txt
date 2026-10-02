@@ -22,6 +22,8 @@ scikit-image==0.26.0
 Pillow==12.3.0
 opencv-python==4.11.0.86
 joblib==1.6.0
+statsmodels==0.15.0
+psutil==7.2.2
 
 # App web (backend FastAPI + frontend HTML/CSS/JS en src/frontend/)
 fastapi==0.141.1

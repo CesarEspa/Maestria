@@ -75,6 +75,116 @@ def make_gradcam_heatmap(img_array, model, last_conv_layer_name, pred_index=None
     return heatmap.numpy(), int(pred_index)
 
 
+def _forward_hasta_capa(img_array, model, last_conv_layer_name):
+    """Reproduce el forward pass manual (ver docstring de make_gradcam_heatmap,
+    necesario por los submodelos anidados de EfficientNet en Keras 3) hasta
+    la capa objetivo, sin gradientes — usado por Score-CAM. Devuelve
+    (conv_output, predictions)."""
+    x = tf.convert_to_tensor(img_array)
+    conv_output = None
+    for layer in model.layers:
+        if isinstance(layer, keras.layers.InputLayer):
+            continue
+        x = layer(x, training=False)
+        if layer.name == last_conv_layer_name:
+            conv_output = x
+    if conv_output is None:
+        raise ValueError(f"No se pudo localizar la capa '{last_conv_layer_name}'.")
+    return conv_output, x
+
+
+def make_gradcampp_heatmap(img_array, model, last_conv_layer_name, pred_index=None):
+    """
+    Grad-CAM++ (Chattopadhyay et al., 2018). Fórmula (Tarea 6, correcciones de
+    la tutora): alpha = g^2 / (2*g^2 + SUM_espacial(A)*g^3) por canal, con el
+    denominador protegido contra cero; peso de canal = SUM(alpha * ReLU(g));
+    mapa = ReLU(SUM(peso * A)). Reutiliza el mismo forward pass manual que
+    make_gradcam_heatmap (necesario para los submodelos anidados de
+    EfficientNet en Keras 3).
+    """
+    x = tf.convert_to_tensor(img_array)
+    conv_output = None
+    with tf.GradientTape() as tape:
+        for layer in model.layers:
+            if isinstance(layer, keras.layers.InputLayer):
+                continue
+            x = layer(x, training=False)
+            if layer.name == last_conv_layer_name:
+                conv_output = x
+                tape.watch(conv_output)
+        predictions = x
+        if conv_output is None:
+            raise ValueError(f"No se pudo localizar la capa '{last_conv_layer_name}'.")
+        if pred_index is None:
+            pred_index = tf.argmax(predictions[0])
+        class_channel = predictions[:, pred_index]
+
+    grads = tape.gradient(class_channel, conv_output)
+    A = conv_output[0]          # (H,W,C)
+    g = grads[0]                # (H,W,C)
+    g2 = tf.square(g)
+    g3 = g2 * g
+    sum_A = tf.reduce_sum(A, axis=(0, 1))  # (C,) — suma espacial por canal
+    denom = 2.0 * g2 + sum_A[tf.newaxis, tf.newaxis, :] * g3
+    denom = tf.where(tf.abs(denom) < 1e-8, tf.ones_like(denom) * 1e-8, denom)
+    alpha = g2 / denom
+
+    pesos_canal = tf.reduce_sum(alpha * tf.nn.relu(g), axis=(0, 1))  # (C,)
+    heatmap = tf.nn.relu(tf.reduce_sum(pesos_canal[tf.newaxis, tf.newaxis, :] * A, axis=-1))
+    heatmap = heatmap / (tf.math.reduce_max(heatmap) + 1e-8)
+    return heatmap.numpy(), int(pred_index)
+
+
+def _normalizar01(arr):
+    lo, hi = arr.min(), arr.max()
+    return (arr - lo) / (hi - lo + 1e-8)
+
+
+def make_scorecam_heatmap(img_array, model, last_conv_layer_name, pred_index=None,
+                           top_k=256, batch_size=32):
+    """
+    Score-CAM (Wang et al., 2020). Para cada uno de los `top_k` canales con
+    mayor activación media (recorte explícito para acotar el coste en CPU,
+    Tarea 6 de las correcciones de la tutora — evaluar los ~1280 canales de
+    EfficientNetB0 sería demasiado lento sin GPU): se sobremuestrea el canal
+    a la resolución de entrada, se normaliza a [0,1], se multiplica por la
+    imagen original, y se mide la probabilidad de la clase objetivo en esa
+    imagen enmascarada. Los pesos finales son el softmax de esas
+    probabilidades.
+    """
+    conv_output, predictions = _forward_hasta_capa(img_array, model, last_conv_layer_name)
+    if pred_index is None:
+        pred_index = int(tf.argmax(predictions[0]))
+
+    A = conv_output[0].numpy()  # (h, w, C)
+    H, W = img_array.shape[1], img_array.shape[2]
+    img0 = img_array[0]  # (H, W, 3)
+
+    mean_activation = A.mean(axis=(0, 1))
+    C = A.shape[-1]
+    k = min(top_k, C)
+    top_idx = np.argsort(mean_activation)[::-1][:k]
+
+    mapas_resized = []
+    for idx in top_idx:
+        canal = _normalizar01(A[:, :, idx])
+        resized = np.array(
+            Image.fromarray(np.uint8(255 * canal)).resize((W, H), Image.LANCZOS)
+        ) / 255.0
+        mapas_resized.append(resized)
+    mapas_resized = np.stack(mapas_resized, axis=0)  # (k, H, W)
+
+    enmascaradas = img0[np.newaxis, ...] * mapas_resized[..., np.newaxis]  # (k,H,W,3)
+    probas = model.predict(enmascaradas, batch_size=batch_size, verbose=0)  # (k,3)
+    scores = probas[:, pred_index]
+    pesos = tf.nn.softmax(scores).numpy()  # (k,)
+
+    heatmap = np.tensordot(pesos, mapas_resized, axes=(0, 0))  # (H,W)
+    heatmap = np.maximum(heatmap, 0)
+    heatmap = heatmap / (heatmap.max() + 1e-8)
+    return heatmap.astype(np.float32), pred_index
+
+
 def overlay_heatmap(img, heatmap, alpha=0.4):
     """Superpone el heatmap (0-1, HxW) sobre la imagen original (0-1, HxWx3)."""
     heatmap_resized = np.array(

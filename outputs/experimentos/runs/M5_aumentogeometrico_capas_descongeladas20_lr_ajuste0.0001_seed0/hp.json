@@ -1,0 +1,16 @@
+{
+  "escenario": "M5",
+  "hp": {
+    "arquitectura": "efficientnet",
+    "aumento": "geometrico",
+    "lr_ajuste": 0.0001,
+    "capas_descongeladas": 20
+  },
+  "seed": 0,
+  "tipo_particion": "grupos",
+  "segmentado": true,
+  "epocas_efectivas": [
+    20,
+    28
+  ]
+}
