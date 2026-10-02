@@ -17,7 +17,7 @@ código). Este archivo explica QUÉ se hizo, QUÉ se encontró, y QUÉ
 significa, con el detalle necesario para escribir el documento.
 
 >>> CORRECCIÓN METODOLÓGICA (octubre 2026) — LEER ESTO PRIMERO.
-    La tutora revisó el TFM y pidió corregir la partición train/val/test
+    Las correcciones del TFM pidieron corregir la partición train/val/test
     (se hacía por imagen, permitiendo fuga de datos entre cortes casi
     idénticos del mismo paciente) y otros 7 problemas metodológicos. Se
     implementó un protocolo nuevo completo — ver FASE 11 en la sección 3
@@ -849,10 +849,10 @@ solo pruebas manuales. La instalación es un único
 proyecto está subido a GitHub: https://github.com/CesarEspa/Maestria
 
 
-FASE 11 — Corrección metodológica completa de la tutora (partición por
+FASE 11 — Corrección metodológica completa del TFM (partición por
 grupos de paciente, 7 tareas, octubre 2026)
 
-La tutora revisó el TFM y pidió corregir 8 problemas metodológicos
+Las correcciones del TFM pidieron corregir 8 problemas metodológicos
 (ver PROMPT_CORRECCIONES_TUTORA.md para las instrucciones completas).
 El más importante: la partición train/val/test se hacía A NIVEL DE
 IMAGEN, permitiendo que cortes casi idénticos del mismo paciente
@@ -862,12 +862,12 @@ entrenamiento. El protocolo nuevo se ejecutó en 7 tareas secuenciales,
 cada una commiteada y pusheada por separado:
 
 TAREA 1 — Grupos de paciente (src/02c_grupos_paciente.py, script
-entregado por la tutora): reconstruye 83 grupos de paciente (15
+entregado en las correcciones del TFM): reconstruye 83 grupos de paciente (15
 Benigno, 30 Maligno, 38 Normal) a partir de la correlación entre cada
 corte y el siguiente (ordenados por número de archivo), cortando en
 los K-1 enlaces más débiles. Particiones por grupos (nuevas) e imagen
 (referencia) generadas para 5 semillas. Verificado: coincide
-exactamente con las cifras esperadas por la tutora (grupos totales,
+exactamente con las cifras esperadas (grupos totales,
 correlación consecutiva mediana 0.97/0.99/0.99, gemelos >0.95 en
 prueba: 89-95% por imagen vs 0-2.5% por grupos). Montaje visual
 revisado fila por fila sin incidencias.
@@ -878,8 +878,8 @@ con caché, segmentación cacheada, control de calidad de máscaras
 UNIFICADO entre CNN y EfficientNet (antes la transferencia usaba
 0.1/0.1 de rotación/zoom mientras la CNN usaba 0.08/0.05 — un segundo
 factor que cambiaba a la vez entre escenarios, ya corregido), parada
-temprana por F1 macro de validación (código dado literalmente por la
-tutora), constructores de arquitectura parametrizados, y entrenar()
+temprana por F1 macro de validación (código dado literalmente en las
+correcciones del TFM), constructores de arquitectura parametrizados, y entrenar()
 reanudable con registro en outputs/experimentos/runs/. Se movieron
 TODOS los modelos/figuras/JSON del protocolo anterior a
 outputs/legacy_particion_imagen/ (git mv, nada se borró).
@@ -916,7 +916,7 @@ M1-M5 en las 3 semillas (semilla 0 reutilizada de la Tarea 3, sin
 reentrenar — confirmado "[saltado, ya existe]") + SVM+HOG en 3 semillas
 x 2 particiones (grupos e imagen, para cuantificar la inflación).
 seleccion_modelo_recomendado.json escrito ANTES de calcular ninguna
-métrica de test, con el criterio fijado de antemano por la tutora
+métrica de test, con el criterio fijado de antemano en el protocolo corregido
 (mayor sensibilidad media en Maligno, validación; desempate <0.02 por
 F1 macro medio).
 
@@ -2426,7 +2426,7 @@ diagnóstico en tres rondas) sigue siendo parte legítima de la
 narrativa metodológica del TFM — pero las cifras y la conclusión sobre
 "cuál es el mejor modelo" deben tomarse de aquí.
 
-La corrección metodológica pedida por la tutora —reconstruir la
+La corrección metodológica pedida en las correcciones del TFM —reconstruir la
 partición train/val/test a nivel de GRUPO de paciente en vez de
 imagen, y corregir otros 7 problemas— cambia sustancialmente el
 panorama. Con partición correcta: (1) la línea base SVM+HOG, lejos de

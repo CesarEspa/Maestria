@@ -82,7 +82,7 @@ metodológicos más valiosos de esta ronda de correcciones.
 
 ## 3. ¿Sigue colapsando el aumento de datos con la parada por F1 macro? — Sí, y de forma más clara que antes
 
-**Pregunta clave de la corrección #2 de la tutora:** la hipótesis era que
+**Pregunta clave de la corrección #2 del protocolo corregido:** la hipótesis era que
 `EarlyStopping(monitor="val_loss")` restauraba los pesos de la época 1, y que vigilar
 F1 macro en su lugar evitaría el colapso. **No lo evita.**
 

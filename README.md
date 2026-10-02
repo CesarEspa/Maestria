@@ -9,8 +9,8 @@ Autor: César Libardo España Salguero
 > Ver la sección [Limitaciones](#limitaciones-y-consideraciones-éticas) antes
 > de interpretar cualquier resultado.
 
-> 🔁 **Corrección metodológica importante (octubre 2026).** La tutora del TFM
-> revisó el proyecto y detectó que la partición train/val/test **a nivel de
+> 🔁 **Corrección metodológica importante (octubre 2026).** Las correcciones
+> del TFM detectaron que la partición train/val/test **a nivel de
 > imagen** permitía que cortes casi idénticos del mismo paciente quedaran
 > repartidos entre entrenamiento y prueba (fuga de datos) — ver
 > [Protocolo corregido](#protocolo-corregido-partición-por-grupos-de-paciente)
@@ -1303,7 +1303,7 @@ sobre el efecto de la fuga de datos (ver `svm_imagen_vs_grupos.png`).
 
 ### El criterio de "modelo recomendado" pre-registrado eligió un modelo colapsado — y eso se documenta tal cual
 
-Criterio fijado *antes* de ver el test (corrección explícita de la tutora:
+Criterio fijado *antes* de ver el test (corrección explícita del protocolo:
 antes se elegía mirando la clase Benigno; ahora el criterio se centra en
 Maligno y se fija de antemano): mayor sensibilidad media en Maligno sobre
 VALIDACIÓN. Ese criterio escogió **M3** (CNN + CutMix), con sensibilidad

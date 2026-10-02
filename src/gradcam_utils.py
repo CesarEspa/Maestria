@@ -95,8 +95,8 @@ def _forward_hasta_capa(img_array, model, last_conv_layer_name):
 
 def make_gradcampp_heatmap(img_array, model, last_conv_layer_name, pred_index=None):
     """
-    Grad-CAM++ (Chattopadhyay et al., 2018). Fórmula (Tarea 6, correcciones de
-    la tutora): alpha = g^2 / (2*g^2 + SUM_espacial(A)*g^3) por canal, con el
+    Grad-CAM++ (Chattopadhyay et al., 2018). Fórmula (Tarea 6, correcciones
+    del TFM): alpha = g^2 / (2*g^2 + SUM_espacial(A)*g^3) por canal, con el
     denominador protegido contra cero; peso de canal = SUM(alpha * ReLU(g));
     mapa = ReLU(SUM(peso * A)). Reutiliza el mismo forward pass manual que
     make_gradcam_heatmap (necesario para los submodelos anidados de
@@ -145,7 +145,7 @@ def make_scorecam_heatmap(img_array, model, last_conv_layer_name, pred_index=Non
     """
     Score-CAM (Wang et al., 2020). Para cada uno de los `top_k` canales con
     mayor activación media (recorte explícito para acotar el coste en CPU,
-    Tarea 6 de las correcciones de la tutora — evaluar los ~1280 canales de
+    Tarea 6 de las correcciones del TFM — evaluar los ~1280 canales de
     EfficientNetB0 sería demasiado lento sin GPU): se sobremuestrea el canal
     a la resolución de entrada, se normaliza a [0,1], se multiplica por la
     imagen original, y se mide la probabilidad de la clase objetivo en esa

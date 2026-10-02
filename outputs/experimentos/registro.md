@@ -6,7 +6,7 @@ Entrega: miércoles 7 de octubre. Fuente: `PROMPT_CORRECCIONES_TUTORA.md`.
 
 ## Tarea 1 — Grupos por paciente y particiones
 
-**Script:** `src/02c_grupos_paciente.py` (entregado por la tutora, sin modificar).
+**Script:** `src/02c_grupos_paciente.py` (entregado en las correcciones del TFM, sin modificar).
 
 **Ejecutado:** 2026-09-30. Duración: segundos (no es entrenamiento, solo correlación de
 imágenes a 64×64 y partición).
@@ -50,7 +50,7 @@ en README.md y PROYECTO_CLAUDE_CONTEXTO.txt.
 
 **Módulo creado:** `src/protocolo.py` — `cargar_imagenes()`, `cargar_segmentadas()`,
 `particion()`, `control_calidad_mascaras()`, aumento unificado (`geometrico`/`cutmix` vía
-`_dataset_entrenamiento()`), `F1MacroValidacion` (código de la tutora, sin modificar),
+`_dataset_entrenamiento()`), `F1MacroValidacion` (código de las correcciones del TFM, sin modificar),
 `cnn_propia()`/`efficientnet()`/`activar_fine_tuning()`, `entrenar()`, `benchmark_tiempo()`.
 
 **Validación antes de confiar en el módulo (2026-10-01):** smoke tests en 3 etapas antes
@@ -207,7 +207,7 @@ Los 10 entrenamientos nuevos (M1-M5 × semillas 1 y 2) y los 6 runs de SVM+HOG
 **Hallazgo crítico — el criterio de selección pre-registrado eligió un modelo
 colapsado como "recomendado":** `seleccion_modelo_recomendado.json` eligió **M3**
 (CNN + CutMix) por tener la mayor sensibilidad media en Maligno (0.78) entre M1-M5,
-tal como exige el criterio fijado de antemano por la tutora (corrección #8). Pero al
+tal como exige el criterio fijado de antemano en el protocolo corregido (corrección #8). Pero al
 examinar el detalle por semilla, M3 tiene `sens_maligno_por_semilla = [0.34, 1.00,
 1.00]` con `f1_macro_por_semilla = [0.379, 0.229, 0.227]` — en las semillas 1 y 2,
 sensibilidad Maligno = 1.00 simultánea con F1 macro muy bajo (~0.23) es la firma
@@ -388,13 +388,13 @@ máscara, segmentada, aumento geométrico, CutMix) correctas para las 3 clases.
 ## Incidencia: schedule de la tasa de aprendizaje y criterio de selección (2026-10-02)
 
 Tras entregar el `RESUMEN_PARA_DOCUMENTO.md` de las 7 tareas, el usuario trasladó dos
-correcciones adicionales señaladas por la tutora sobre el prompt original (no son
-errores de la implementación de este protocolo, son ajustes al propio diseño
-experimental, detectados al revisar los resultados):
+correcciones adicionales al prompt original (no son errores de la implementación de
+este protocolo, son ajustes al propio diseño experimental, detectados al revisar los
+resultados):
 
 ### 1. M1, M2 y M3 nunca llegaron a entrenar de verdad
 
-**Diagnóstico de la tutora, confirmado al revisar `historial.csv` de los 9 runs:** la
+**Diagnóstico señalado en las correcciones del TFM, confirmado al revisar `historial.csv` de los 9 runs:** la
 pérdida de entrenamiento nunca bajó de ln(3)≈1.0986 (el valor de un clasificador que no
 aprendió nada, con 3 clases) y la exactitud de entrenamiento no superó 0.53 en ningún
 run. **Causa:** `ReduceLROnPlateau(monitor="val_f1_macro", patience=5)` reducía el LR

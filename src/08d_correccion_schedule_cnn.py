@@ -2,7 +2,7 @@
 08d - Corrección de la incidencia "schedule de la tasa de aprendizaje" (ver
 outputs/experimentos/registro.md)
 
-Diagnóstico (dado por la tutora, no detectado por este pipeline): en los 9
+Diagnóstico (señalado en las correcciones del TFM, no detectado por este pipeline): en los 9
 runs de M1/M2/M3 de la Tarea 3+4, la pérdida de entrenamiento nunca bajó de
 ln(3)≈1.0986 y la exactitud de entrenamiento no pasó de 0.53 — la CNN nunca
 llegó a entrenar de verdad. Causa: `ReduceLROnPlateau(monitor="val_f1_macro",

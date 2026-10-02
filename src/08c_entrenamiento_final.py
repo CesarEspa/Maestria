@@ -1,5 +1,5 @@
 """
-08c - Entrenamiento final multisemilla (Tarea 4, correcciones de la tutora)
+08c - Entrenamiento final multisemilla (Tarea 4, correcciones del TFM)
 
 Para cada semilla en SEMILLAS, entrena M1-M5 con la configuración elegida en
 la Tarea 3 (outputs/experimentos/hiperparametros_finales.json) sobre la
@@ -137,7 +137,7 @@ def entrenar_svm(tipos_particion=("grupos", "imagen")):
 
 def seleccionar_modelo_recomendado(config_final):
     """
-    Criterio fijado de antemano (corrección #8 de la tutora): mayor
+    Criterio fijado de antemano (corrección #8 del protocolo corregido): mayor
     sensibilidad media en Maligno sobre VALIDACIÓN (media de las 3
     semillas), entre M1-M5 (la SVM es línea base de comparación, no
     candidata a "modelo recomendado"). Desempate <0.02: F1 macro medio de

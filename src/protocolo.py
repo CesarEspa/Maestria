@@ -1,11 +1,11 @@
 """
 protocolo.py — Infraestructura común del protocolo corregido (correcciones
-de la tutora, ver PROMPT_CORRECCIONES_TUTORA.md): partición por grupos de
+del TFM, ver PROMPT_CORRECCIONES_TUTORA.md): partición por grupos de
 paciente, parada temprana por F1 macro de validación, aumento de datos
 unificado entre arquitecturas, y entrenamiento reanudable con registro en
 disco. Los scripts de la Tarea 3 en adelante importan de aquí.
 
-Numeración de secciones = numeración del prompt de la tutora (Tarea 2).
+Numeración de secciones = numeración del prompt de correcciones (Tarea 2).
 """
 import importlib
 import json
@@ -246,8 +246,8 @@ def build_augmentation_geometrico():
     """
     Aumento geométrico UNIFICADO: antes la transferencia usaba
     RandomRotation(0.1)/RandomZoom(0.1) mientras la CNN usaba 0.08/0.05 — un
-    segundo factor que cambiaba a la vez entre escenarios (corrección #5 de
-    la tutora). Ahora ambas familias usan exactamente esta misma capa.
+    segundo factor que cambiaba a la vez entre escenarios (corrección #5 del
+    protocolo corregido). Ahora ambas familias usan exactamente esta misma capa.
     """
     return keras.Sequential([
         layers.RandomFlip("horizontal"),
@@ -283,7 +283,7 @@ def _dataset_entrenamiento(X_train, y_train_cat, aumento, class_weights_tensor, 
 
 
 # ══════════════ 2.4 Parada temprana por F1 macro de validación ═════════════
-# Código dado literalmente por la tutora, sin modificar.
+# Código dado literalmente en las correcciones del TFM, sin modificar.
 
 class F1MacroValidacion(keras.callbacks.Callback):
     """Debe ir PRIMERO en la lista de callbacks: añade val_f1_macro a logs

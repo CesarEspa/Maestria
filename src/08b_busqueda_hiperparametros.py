@@ -1,5 +1,5 @@
 """
-08b - Búsqueda de hiperparámetros (Tarea 3, correcciones de la tutora)
+08b - Búsqueda de hiperparámetros (Tarea 3, correcciones del TFM)
 
 Solo validación, semilla 0, partición por grupos de paciente. Cada
 escenario (M1-M5) cambia un solo factor respecto al anterior:

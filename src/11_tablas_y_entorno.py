@@ -1,6 +1,6 @@
 """
 11 - Tablas descriptivas, figura de preprocesamiento y entorno (Tarea 7,
-correcciones de la tutora)
+correcciones del TFM)
 
 1. outputs/experimentos/imagenes_por_subconjunto.csv: imágenes y grupos por
    clase en train/val/test, para cada semilla y tipo de partición (grupos e

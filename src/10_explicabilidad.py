@@ -1,5 +1,5 @@
 """
-10 - Explicabilidad (Tarea 6, correcciones de la tutora)
+10 - Explicabilidad (Tarea 6, correcciones del TFM)
 
 Usa los modelos de semilla 0 y su conjunto de prueba (partición por grupos):
   - Grad-CAM sobre M1 y sobre el modelo recomendado (si es distinto de M1).

@@ -1,6 +1,6 @@
 """
 09 - Evaluación en prueba (una sola vez) y estadística (Tarea 5, correcciones
-de la tutora)
+del TFM)
 
 Predice sobre el conjunto de prueba UNA ÚNICA VEZ por modelo y semilla (nunca
 antes de este script — ver Tarea 4, seleccion_modelo_recomendado.json se
