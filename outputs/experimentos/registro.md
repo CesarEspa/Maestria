@@ -289,6 +289,64 @@ Archivos: `metricas_por_semilla.csv`, `resumen_ic95.csv`, `mcnemar.csv`,
 Commit y push de la Tarea 5. Se continúa automáticamente con la Tarea 6
 (explicabilidad).
 
+---
+
+## Tarea 6 — Explicabilidad (completada 2026-10-02)
+
+**Bug real encontrado y corregido antes de confiar en el resultado:** el primer
+lanzamiento falló con `NameError: name 'calcular_correlacion' is not defined` — la
+función se había definido como `correlacion_entre_clases(heatmaps_por_clase)` (recibe
+un diccionario clase→lista de heatmaps) pero se llamaba como `calcular_correlacion`
+con una lista plana de resultados. Corregido añadiendo un wrapper
+`calcular_correlacion(lista_resultados)` que agrupa por `clase_idx` antes de llamar a
+la función original. Relanzado con `python -u` (en vez de sin flags) para evitar el
+problema de buffering de la Tarea 5 y poder verificar el progreso en tiempo real —
+funcionó, el bug se detectó y corrigió en minutos, no se perdió tiempo de cómputo
+relevante (Grad-CAM es rápido).
+
+**Hallazgo principal — el problema de explicabilidad de la Fase 10 anterior se
+confirma con TRES métodos independientes, no es un artefacto de uno solo:**
+Grad-CAM, Grad-CAM++ y Score-CAM sobre M4 (EfficientNetB0) dan correlación entre
+clases de **0.9998, 1.0000 y 0.99999** respectivamente — prácticamente constantes
+los tres, con casos de clases y aciertos/errores completamente distintos
+(`comparacion_metodos_M4.png`, revisada visualmente). El patrón visual concreto:
+Grad-CAM reproduce el degradado izquierda-derecha ya documentado; Grad-CAM++ y
+Score-CAM muestran, los dos, un punto caliente fijo en la esquina **inferior
+derecha** — un artefacto más parecido al original de la primera ronda (esquina
+saturada) que al degradado de la segmentación. Confirma con fuerza la hipótesis ya
+planteada: es una propiedad estructural de cómo EfficientNetB0 integra información
+espacial en su última capa, no un artefacto de un método de explicabilidad
+particular ni del preprocesamiento de entrada.
+
+**Matiz importante sobre la métrica `fraccion_esquina`:** definida (según el prompt)
+sobre la celda 1/7×1/7 **superior izquierda**. El artefacto de Grad-CAM++/Score-CAM
+está en la esquina **inferior derecha** — por eso `fraccion_esquina ≈ 0` para esos
+casos en `explicabilidad.csv`, aunque el artefacto de esquina SÍ existe (solo que en
+la esquina opuesta a la que mide la métrica tal como está definida). Se documenta
+explícitamente para que no se lea la cifra de 0.0 como "sin problema de esquina" —
+la evidencia visual (figura) es la que lo confirma, el número por sí solo engañaría.
+
+**M1 y M3 (CNN propia) son menos "constantes"** que M4 (correlación 0.501 y 0.731
+respectivamente) pero predicen "Normal" para los 6/6 casos mostrados en sus grids
+(`gradcam_M1.png`, `gradcam_recomendado.png` — M3 es el modelo recomendado) — consistente
+con el colapso de M1/M3 en la semilla 0 ya documentado en la Tarea 3. Su Grad-CAM se
+concentra en gran medida en el contorno corporal (anillo en el borde de la imagen),
+con el interior pulmonar en tonos más uniformes.
+
+**Hallazgo adicional, grave:** `0.0% de 42` mapas (todos los modelos y métodos
+combinados) caen mayormente (≥50% de la energía) dentro de la envolvente pulmonar —
+ninguno de los tres métodos, en ninguno de los dos modelos evaluados, señala
+predominantemente tejido pulmonar relevante. Es una limitación de explicabilidad que
+afecta a todo el proyecto, no solo al patrón "constante" ya conocido; se documentará
+con este número exacto en el resumen final, sin suavizarlo.
+
+Archivos: `outputs/experimentos/explicabilidad.csv`, `outputs/gradcam/gradcam_M1.png`,
+`outputs/gradcam/comparacion_metodos_M4.png`, `outputs/gradcam/gradcam_recomendado.png`
+— las 3 figuras revisadas visualmente.
+
+Commit y push de la Tarea 6 (incluye el fix de `10_explicabilidad.py`). Se continúa
+automáticamente con la Tarea 7 (última).
+
 **Archivos generados:**
 - `src/protocolo.py`
 - `outputs/splits/imagenes_224.npz`

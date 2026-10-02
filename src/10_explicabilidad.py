@@ -151,6 +151,15 @@ def correlacion_entre_clases(heatmaps_por_clase):
     return float(np.mean(corrs)) if corrs else float("nan")
 
 
+def calcular_correlacion(lista_resultados):
+    """Agrupa una lista de resultados (como las que produce procesar_modelo)
+    por clase_idx y calcula correlacion_entre_clases sobre los heatmaps."""
+    heatmaps_por_clase = {}
+    for r in lista_resultados:
+        heatmaps_por_clase.setdefault(r["clase_idx"], []).append(r["heatmap"])
+    return correlacion_entre_clases(heatmaps_por_clase)
+
+
 # ─────────────────────────── Cálculo de mapas ───────────────────────────────
 
 def calcular_heatmap(metodo, model, last_conv, img_array):
