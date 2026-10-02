@@ -508,3 +508,54 @@ la configuración ganadora tal cual (el aprendizaje es real, solo 2 épocas fuer
 límite nominal), relajar el límite de época, o algún otro ajuste.
 
 ---
+
+## Corrección v2: EarlyStopping con activación diferida (meseta + época mínima) (2026-10-02)
+
+**Decisión del usuario tras ver el resultado anterior:** el umbral de la época 25 era
+solo una comprobación de que la red aprende, y con `lr=1e-4` sí aprende (loss 0.666).
+El problema real es otro: con `start_from_epoch=15` y `patience=15`, un run que tarde
+unas 30 épocas en salir de la meseta se detendría ANTES de aprender nada — en la
+semilla 0, la configuración ganadora salió de la meseta en la **época 27**, a solo
+**3 épocas** de ese límite (15+15=30). Un run ligeramente más lento en salir de la
+meseta se habría quedado sin margen real de aprendizaje después de salir, reproduciendo
+el mismo problema de fondo por una vía distinta al `ReduceLROnPlateau` original.
+
+**Regla aplicada a TODA la familia CNN** (`protocolo.EarlyStoppingTrasMeseta`, nuevo
+callback — reemplaza el `EarlyStopping` estándar usado en la corrección v1): solo
+empieza a registrar "mejor época" y a contar paciencia cuando se cumplen DOS
+condiciones simultáneamente:
+1. época ≥ 15, Y
+2. la red ya salió de la meseta (loss de **entrenamiento** < 1.0 en alguna época ya
+   transcurrida — una vez que ocurre, queda "salida" de forma permanente).
+
+Antes de que ambas se cumplan, el callback no hace nada (no guarda pesos, no cuenta
+paciencia). Una vez activo: `monitor="val_f1_macro", mode="max", patience=15,
+restore_best_weights=True`. Techo de 60 épocas sin cambios. Si un run llega a 60
+épocas sin salir de la meseta, se entrena hasta el final, se guarda tal cual (sin
+restaurar ningún peso — nunca hubo una "mejor época" que registrar), y
+`entrenar()` anota `meseta: {"salio_meseta": false, "epoca_salida_meseta": null}`
+en su `hp.json` para que quede documentado como "no sale de la meseta".
+
+**Validación antes de lanzar producción:** prueba unitaria sintética del callback (4
+casos: nunca sale de la meseta → no cuenta nada; sale en época 27 → empieza a contar
+inmediatamente y respeta paciencia=15 desde ahí; sale muy temprano pero antes de la
+época mínima → espera a época 15; combinación correcta de ambas condiciones) — los 4
+casos pasaron. Prueba de integración real (5 épocas, `TESTFIX2`, limpiada después):
+confirmado que `hp.json` registra correctamente `meseta.salio_meseta=False` cuando
+corresponde, sin errores de ejecución.
+
+Los 4 runs de la rejilla M1 de la corrección v1 (con `EarlyStopping` estándar) se
+movieron a `outputs/experimentos/runs_descartados_schedule/` con sufijo `_v2` en el
+nombre (no se borraron) — se repite la rejilla completa con el nuevo callback.
+`08d_correccion_schedule_cnn.py` actualizado: el criterio de parada ya no es "la
+configuración ganadora debe cruzar loss<1.0 antes de la época 25", sino "si NINGUNA
+de las 4 configuraciones del grid sale de la meseta en 60 épocas, detenerse" — una
+señal mucho más directa de que el modelo no puede aprender con ningún hiperparámetro
+probado, en vez de un límite de época arbitrario.
+
+Por instrucción explícita del usuario, el proceso continúa automáticamente de aquí en
+adelante sin detenerse entre pasos: M2/M3, decisión de aumento para M4, semillas 1-2
+de M1-M3, nuevo criterio de Youden, Tarea 5 completa, y Grad-CAM de M1 y del modelo
+recomendado — con commit y push al terminar cada paso.
+
+---

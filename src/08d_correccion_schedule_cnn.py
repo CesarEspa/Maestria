@@ -10,16 +10,25 @@ patience=5)` bajaba el LR hasta ~1e-6 antes de que la CNN saliera de la
 meseta inicial (en el protocolo preliminar, a LR constante 1e-4, la CNN
 salía de la meseta hacia la época 11 — ver curvas_cnn_base.png).
 
-Corrección (solo familia CNN — M4, M5 y SVM NO se tocan, no tienen este
-problema): sin ReduceLROnPlateau; EarlyStopping(monitor="val_f1_macro",
-patience=15, start_from_epoch=15); máximo 60 épocas (ver
-protocolo._callbacks_f1_cnn y protocolo.MAX_EPOCHS_CNN).
+Corrección v2 (solo familia CNN — M4, M5 y SVM NO se tocan, no tienen este
+problema): el primer intento (EarlyStopping estándar, start_from_epoch=15,
+sin ReduceLROnPlateau) mejoró mucho el entrenamiento, pero en la rejilla de
+semilla 0 la CNN ganadora no salió de su meseta inicial hasta la ÉPOCA 27 —
+a solo 3 épocas de que patience=15 (límite en época 30) la hubiera cortado
+sin aprender nada. Corregido con `protocolo.EarlyStoppingTrasMeseta`: solo
+empieza a contar "mejor época" y paciencia cuando se cumplen dos
+condiciones — época >= 15 Y la red ya salió de la meseta (loss de
+entrenamiento < 1.0 en alguna época). Antes de eso no cuenta nada. Ver
+protocolo.py para el detalle completo y la motivación.
 
 Este script:
-  1. Repite la rejilla de M1 (lr x dropout, semilla 0) con los callbacks
-     corregidos. Verifica el criterio de aceptación: la pérdida de
-     entrenamiento de la configuración GANADORA debe bajar de 1.0 antes de
-     la época 25. Si no lo logra, se detiene (sys.exit) sin continuar.
+  1. Repite la rejilla de M1 (lr x dropout, semilla 0) con el callback
+     corregido. Si NINGUNA de las 4 configuraciones sale de la meseta en
+     60 épocas, se detiene (sys.exit) — en ese caso sí sería una señal real
+     de que el modelo no puede aprender con ninguno de los hiperparámetros
+     probados. En caso contrario, continúa aunque la configuración ganadora
+     haya tardado en salir de la meseta (ya no hay límite de época fijo:
+     la propia lógica del callback asegura margen suficiente tras salir).
   2. M2 y M3 con la configuración ganadora de M1.
   3. Recalcula qué aumento gana entre los NUEVOS M2/M3. Si cambia respecto
      al anterior (registrado en hiperparametros_finales.json), reentrena la
@@ -46,8 +55,6 @@ busqueda_mod = importlib.import_module("08b_busqueda_hiperparametros")
 
 SEED_BUSQUEDA = 0
 SEMILLAS_FINALES = [1, 2]
-LOSS_ACEPTACION = 1.0
-EPOCA_LIMITE_ACEPTACION = 25
 
 
 def _cargar_config_anterior():
@@ -55,12 +62,11 @@ def _cargar_config_anterior():
         return json.load(f)
 
 
-def _loss_entrenamiento_baja_de(run_dir, umbral, epoca_limite):
-    """True si historial.csv tiene alguna fila con epoca <= epoca_limite y
-    loss < umbral (fase 'unica' para CNN, una sola fase)."""
-    hist = pd.read_csv(run_dir / "historial.csv")
-    sub = hist[hist["epoca"] <= epoca_limite]
-    return bool((sub["loss"] < umbral).any()), float(hist["loss"].min())
+def _info_meseta(run_dir):
+    """Lee el campo 'meseta' que entrenar() ya guarda en hp.json."""
+    with open(run_dir / "hp.json", encoding="utf-8") as f:
+        info = json.load(f)
+    return info.get("meseta") or {"salio_meseta": False, "epoca_salida_meseta": None}
 
 
 def main():
@@ -89,18 +95,27 @@ def main():
     print(f"  → M1 elegido: lr={m1_mejor['lr']} dropout_bloques={m1_mejor['dropout_bloques']} "
           f"(f1_macro_val={m1_mejor['f1_macro_val']:.4f})")
 
-    # ── Criterio de aceptación ───────────────────────────────────────────
-    paso, loss_min = _loss_entrenamiento_baja_de(m1_mejor_run_dir, LOSS_ACEPTACION, EPOCA_LIMITE_ACEPTACION)
-    print(f"\n  Criterio de aceptación (loss entrenamiento < {LOSS_ACEPTACION} antes de "
-          f"época {EPOCA_LIMITE_ACEPTACION}): {'CUMPLE' if paso else 'NO CUMPLE'} "
-          f"(loss mínima observada: {loss_min:.4f})")
-    if not paso:
-        # Comprobar también las otras 3 configuraciones, por si alguna sí lo logra
-        # (en ese caso se podría considerar esa en vez de la "mejor por f1"),
-        # pero la instrucción es explícita: si la GANADORA no lo logra, detenerse.
-        print("\n  ⚠ NINGUNA configuración ganadora cumple el criterio de aceptación.")
+    # ── Criterio de aceptación v2: ¿salió de la meseta ALGUNA configuración? ──
+    alguna_salio = False
+    for fila in m1_filas:
+        info = _info_meseta(Path(fila["run_dir"]))
+        estado = (f"salió en época {info['epoca_salida_meseta']}" if info["salio_meseta"]
+                  else "NO SALIÓ DE LA MESETA")
+        print(f"    lr={fila['lr']} dropout={fila['dropout_bloques']}: {estado}")
+        alguna_salio = alguna_salio or info["salio_meseta"]
+
+    info_ganadora = _info_meseta(m1_mejor_run_dir)
+    print(f"\n  Configuración ganadora: {'salió de la meseta en época ' + str(info_ganadora['epoca_salida_meseta']) if info_ganadora['salio_meseta'] else 'NO salió de la meseta'}")
+
+    if not alguna_salio:
+        print("\n  ⚠ NINGUNA de las 4 configuraciones salió de la meseta en 60 épocas.")
         print("  DETENIÉNDOSE — revisar manualmente antes de continuar (ver registro.md).")
         sys.exit(1)
+    if not info_ganadora["salio_meseta"]:
+        print("\n  ⚠ La configuración GANADORA (mayor F1 macro) no salió de la meseta, "
+              "pero otra configuración del grid sí lo logró. Continuando con la ganadora "
+              "de todas formas (gana por F1 macro de validación, el criterio establecido) "
+              "— queda documentado en registro.md.")
 
     # ── 2. M2 y M3 con la configuración de M1 ───────────────────────────
     print("\n--- M2: CNN + aumento geométrico (hp de M1, callbacks corregidos) ---")

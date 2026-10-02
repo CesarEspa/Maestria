@@ -313,19 +313,92 @@ def _callbacks_f1_efficientnet(X_val, y_val, patience=15):
     ]
 
 
+class EarlyStoppingTrasMeseta(keras.callbacks.Callback):
+    """
+    CNN propia (M1/M2/M3) — incidencia "schedule de la tasa de aprendizaje y
+    criterio de selección", 2ª corrección. El primer intento (EarlyStopping
+    estándar con start_from_epoch=15, sin ReduceLROnPlateau) mejoró mucho el
+    entrenamiento (con lr=1e-4 la loss baja hasta ~0.67, frente al
+    estancamiento >1.0 de antes), pero en la rejilla de semilla 0 la CNN no
+    salió de su meseta inicial hasta la ÉPOCA 27 — a solo 3 épocas de que
+    `patience=15` (contando desde `start_from_epoch=15`, es decir, límite en
+    época 30) hubiera cortado el entrenamiento ANTES de que aprendiera nada.
+    Un run algo más lento en salir de la meseta se habría detenido
+    prematuramente igual que con el bug original, solo que por una vía
+    distinta.
+
+    Esta versión solo empieza a registrar "mejor época" y a contar paciencia
+    cuando se cumplen DOS condiciones simultáneamente:
+      1. época >= `epoca_minima` (15)
+      2. la red ya salió de la meseta: loss de ENTRENAMIENTO < `umbral_meseta`
+         (1.0) en alguna época ya transcurrida (una vez que ocurre, queda
+         "salida" de forma permanente, aunque la loss vuelva a subir después).
+    Antes de que ambas se cumplan, no cuenta nada (ni mejor época ni
+    paciencia) — así que un run que tarde en salir de la meseta no se queda
+    sin margen real de aprendizaje después de salir. Si el modelo nunca sale
+    de la meseta en `epocas_maximas`, se entrena hasta el final sin que el
+    callback restaure ningún peso (nunca hubo una "mejor época" que
+    registrar) y `nunca_salio_meseta` queda en True para que quien llame a
+    `entrenar()` lo registre como tal.
+
+    Una vez activo, se comporta como
+    `EarlyStopping(monitor="val_f1_macro", mode="max", patience=15,
+    restore_best_weights=True)`.
+    """
+    def __init__(self, epoca_minima=15, umbral_meseta=1.0, patience=15,
+                 monitor="val_f1_macro", mode="max"):
+        super().__init__()
+        self.epoca_minima = epoca_minima
+        self.umbral_meseta = umbral_meseta
+        self.patience = patience
+        self.monitor = monitor
+        self.mode = mode
+        self.salio_meseta = False
+        self.epoca_salida_meseta = None
+        self.nunca_salio_meseta = True
+        self.mejor_valor = None
+        self.mejor_epoca = None
+        self.mejor_pesos = None
+        self.esperando = 0
+
+    def on_epoch_end(self, epoch, logs=None):
+        logs = logs or {}
+        loss_actual = logs.get("loss")
+        if not self.salio_meseta and loss_actual is not None and loss_actual < self.umbral_meseta:
+            self.salio_meseta = True
+            self.epoca_salida_meseta = epoch
+            self.nunca_salio_meseta = False
+
+        if not (self.salio_meseta and epoch >= self.epoca_minima):
+            return  # aún no empieza a contar "mejor época" ni paciencia
+
+        valor_actual = logs.get(self.monitor)
+        if valor_actual is None:
+            return
+
+        es_mejor = (self.mejor_valor is None) or (
+            valor_actual > self.mejor_valor if self.mode == "max" else valor_actual < self.mejor_valor
+        )
+        if es_mejor:
+            self.mejor_valor = valor_actual
+            self.mejor_epoca = epoch
+            self.esperando = 0
+            self.mejor_pesos = self.model.get_weights()
+        else:
+            self.esperando += 1
+            if self.esperando >= self.patience:
+                self.model.stop_training = True
+
+    def on_train_end(self, logs=None):
+        if self.mejor_pesos is not None:
+            self.model.set_weights(self.mejor_pesos)
+
+
 def _callbacks_f1_cnn(X_val, y_val):
-    """CNN propia (M1/M2/M3) — CORREGIDO (incidencia 'schedule de la tasa de
-    aprendizaje'): SIN ReduceLROnPlateau. Con val_f1_macro + patience=5, el
-    LR caía a ~1e-6 antes de que la CNN saliera de la meseta inicial (loss
-    de entrenamiento nunca bajaba de ln(3)≈1.0986) — confirmado comparando
-    con curvas_cnn_base.png del protocolo preliminar, donde a LR constante
-    1e-4 la CNN sale de la meseta hacia la época 11. EarlyStopping con
-    start_from_epoch=15 (antes 5) le da más margen a esa meseta inicial."""
-    return [
-        F1MacroValidacion(X_val, y_val, batch_size=BATCH_SIZE),
-        keras.callbacks.EarlyStopping(monitor="val_f1_macro", mode="max", patience=15,
-                                       start_from_epoch=15, restore_best_weights=True),
-    ]
+    f1cb = F1MacroValidacion(X_val, y_val, batch_size=BATCH_SIZE)
+    es = EarlyStoppingTrasMeseta(epoca_minima=15, umbral_meseta=1.0, patience=15,
+                                  monitor="val_f1_macro", mode="max")
+    return [f1cb, es], es
 
 
 # ════════════════════════════ 2.5 Constructores ═════════════════════════════
@@ -462,14 +535,23 @@ def entrenar(escenario, hp, seed, tipo_particion="grupos", segmentado=False):
 
     train_ds = _dataset_entrenamiento(X_train, y_train_cat, aumento, class_weights_tensor, seed)
 
+    meseta_info = None
     if arquitectura == "cnn":
         model = cnn_propia(hp["lr"], hp["dropout_bloques"])
+        callbacks_cnn, es_meseta = _callbacks_f1_cnn(X_val, y_val)
         history = model.fit(
             train_ds, validation_data=(X_val, y_val_cat), epochs=MAX_EPOCHS_CNN,
-            class_weight=class_weight_arg, callbacks=_callbacks_f1_cnn(X_val, y_val),
+            class_weight=class_weight_arg, callbacks=callbacks_cnn,
             verbose=1,
         )
         historiales.append(("unica", history))
+        meseta_info = {
+            "salio_meseta": not es_meseta.nunca_salio_meseta,
+            "epoca_salida_meseta": es_meseta.epoca_salida_meseta,
+        }
+        if es_meseta.nunca_salio_meseta:
+            print(f"  ⚠ {nombre}: NO SALIÓ DE LA MESETA en {MAX_EPOCHS_CNN} épocas "
+                  f"(loss de entrenamiento nunca bajó de 1.0). Guardado tal cual.")
 
     elif arquitectura == "efficientnet":
         model, base_model = efficientnet(hp["lr_ajuste"], hp["capas_descongeladas"])
@@ -515,6 +597,7 @@ def entrenar(escenario, hp, seed, tipo_particion="grupos", segmentado=False):
             "escenario": escenario, "hp": hp, "seed": seed,
             "tipo_particion": tipo_particion, "segmentado": segmentado,
             "epocas_efectivas": [len(h.history["loss"]) for _, h in historiales],
+            "meseta": meseta_info,
         }, f, indent=2, ensure_ascii=False)
 
     print(f"  ✓ {nombre} — {tiempo_s / 60:.1f} min "
