@@ -1,0 +1,6 @@
+{
+  "escenario": "SVM_grupos",
+  "C": 1,
+  "seed": 2,
+  "tipo_particion": "grupos"
+}

@@ -180,6 +180,58 @@ Commit y push de la Tarea 3 hechos por separado. Se continúa automáticamente c
 Tarea 4 (entrenamiento final multisemilla), sin esperar confirmación, según lo
 indicado por el usuario.
 
+**Incidencia técnica (2026-10-02, madrugada):** durante la noche, el equipo entró en
+suspensión (probablemente por configuración de ahorro de energía de Windows tras
+inactividad de teclado/ratón), lo que pausó el avance real del entrenamiento de la
+Tarea 4 durante varias horas. El proceso en sí **no murió** (el `nohup`/`disown` lo
+protege de que el entorno de ejecución lo mate, pero no de que el sistema operativo
+completo se suspenda) — al reanudarse, Keras reportó un tiempo de paso artificialmente
+inflado (~1000 s en vez de ~3 s) para el paso que coincidió con la suspensión, y
+después volvió a su ritmo normal sin intervención. El run en curso en ese momento
+(M1 semilla 2) tardó algo más de lo normal (44.2 min) pero terminó bien. **Recomendado
+al usuario desactivar la suspensión automática mientras el protocolo siga corriendo**,
+para no perder más horas de avance real en pausas similares. (Nota: M3 semilla 2
+reportó 360 min de duración, frente a los ~25-30 min habituales de un CNN — consistente
+con otra suspensión larga del sistema durante esa ejecución; el entrenamiento en sí
+terminó correctamente, solo el reloj de pared incluye las horas de pausa.)
+
+---
+
+## Tarea 4 — Entrenamiento final multisemilla (completada 2026-10-02)
+
+Los 10 entrenamientos nuevos (M1-M5 × semillas 1 y 2) y los 6 runs de SVM+HOG
+(3 semillas × grupos/imagen) terminaron sin errores. Semilla 0 de M1-M5 se reutilizó
+íntegramente de la Tarea 3 (0 reentrenamientos, confirmado por los mensajes
+"[saltado, ya existe]").
+
+**Hallazgo crítico — el criterio de selección pre-registrado eligió un modelo
+colapsado como "recomendado":** `seleccion_modelo_recomendado.json` eligió **M3**
+(CNN + CutMix) por tener la mayor sensibilidad media en Maligno (0.78) entre M1-M5,
+tal como exige el criterio fijado de antemano por la tutora (corrección #8). Pero al
+examinar el detalle por semilla, M3 tiene `sens_maligno_por_semilla = [0.34, 1.00,
+1.00]` con `f1_macro_por_semilla = [0.379, 0.229, 0.227]` — en las semillas 1 y 2,
+sensibilidad Maligno = 1.00 simultánea con F1 macro muy bajo (~0.23) es la firma
+inequívoca de un modelo que **colapsó a predecir "Maligno" para todo** (sensibilidad
+perfecta trivial, a costa de ignorar las otras dos clases) — el mismo patrón de
+colapso de CNN+Augmentation/CutMix documentado extensamente en la Fase 10 del
+protocolo anterior, que persiste bajo partición por grupos y parada por F1 macro.
+
+**Qué se hizo al respecto: nada — y eso es lo correcto.** El criterio se fijó
+explícitamente ANTES de ver esta cifra, precisamente para evitar el sesgo de
+cambiar las reglas después de mirar el resultado (ver Tarea 4 del prompt: "fijado de
+antemano... antes de mirar el conjunto de prueba"). Cambiarlo ahora, aunque el
+resultado sea incómodo, violaría el principio central de este protocolo corregido.
+Se documenta tal cual, como una lección metodológica genuina: un criterio de
+sensibilidad "pura" (sin ningún control de especificidad o F1) es frágil ante el
+colapso trivial de un modelo a una sola clase, y una selección pre-registrada puede
+legítimamente producir un resultado contraintuitivo que conviene exponer, no ocultar.
+La Tarea 5 (test + McNemar) confirmará o matizará esto con más datos — se compara
+igualmente contra M3 como exige el protocolo, y se discutirá esta paradoja con
+honestidad en el resumen final.
+
+Commit y push de la Tarea 4 hechos tal cual (sin alterar el criterio ni el resultado
+de la selección). Se continúa automáticamente con la Tarea 5.
+
 **Archivos generados:**
 - `src/protocolo.py`
 - `outputs/splits/imagenes_224.npz`

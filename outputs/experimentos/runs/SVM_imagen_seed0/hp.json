@@ -1,0 +1,6 @@
+{
+  "escenario": "SVM_imagen",
+  "C": 10,
+  "seed": 0,
+  "tipo_particion": "imagen"
+}

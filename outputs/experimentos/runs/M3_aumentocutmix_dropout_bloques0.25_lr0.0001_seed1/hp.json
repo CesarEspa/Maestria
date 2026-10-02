@@ -1,0 +1,15 @@
+{
+  "escenario": "M3",
+  "hp": {
+    "arquitectura": "cnn",
+    "aumento": "cutmix",
+    "lr": 0.0001,
+    "dropout_bloques": 0.25
+  },
+  "seed": 1,
+  "tipo_particion": "grupos",
+  "segmentado": false,
+  "epocas_efectivas": [
+    21
+  ]
+}

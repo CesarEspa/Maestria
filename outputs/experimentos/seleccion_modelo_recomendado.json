@@ -1,0 +1,87 @@
+{
+  "fecha_hora": "2026-10-02T10:16:28",
+  "criterio": "Mayor sensibilidad media sobre la clase Maligno en VALIDACIÓN (media de 3 semillas), entre M1-M5. Desempate (<0.02 de diferencia): mayor F1 macro medio de validación. Fijado antes de calcular cualquier métrica sobre el conjunto de prueba.",
+  "modelo_recomendado": "M3",
+  "cifras_validacion": {
+    "M1": {
+      "sens_maligno_por_semilla": [
+        0.34146341463414637,
+        0.34146341463414637,
+        0.9876543209876543
+      ],
+      "sens_maligno_medio": 0.5568603834186491,
+      "f1_macro_por_semilla": [
+        0.378916827852998,
+        0.38356467225669927,
+        0.5332457005148429
+      ],
+      "f1_macro_medio": 0.4319090668748467,
+      "segmentado": false
+    },
+    "M2": {
+      "sens_maligno_por_semilla": [
+        0.4268292682926829,
+        0.0,
+        1.0
+      ],
+      "sens_maligno_medio": 0.47560975609756095,
+      "f1_macro_por_semilla": [
+        0.4167414333160189,
+        0.18209876543209877,
+        0.26274757690686895
+      ],
+      "f1_macro_medio": 0.2871959252183289,
+      "segmentado": false
+    },
+    "M3": {
+      "sens_maligno_por_semilla": [
+        0.34146341463414637,
+        1.0,
+        1.0
+      ],
+      "sens_maligno_medio": 0.7804878048780489,
+      "f1_macro_por_semilla": [
+        0.378916827852998,
+        0.2287308228730823,
+        0.226890756302521
+      ],
+      "f1_macro_medio": 0.2781794690095338,
+      "segmentado": false
+    },
+    "M4": {
+      "sens_maligno_por_semilla": [
+        0.3780487804878049,
+        0.3902439024390244,
+        0.5925925925925926
+      ],
+      "sens_maligno_medio": 0.4536284251731406,
+      "f1_macro_por_semilla": [
+        0.5281980305516362,
+        0.4489837647732384,
+        0.6165200414961486
+      ],
+      "f1_macro_medio": 0.5312339456070078,
+      "segmentado": false
+    },
+    "M5": {
+      "sens_maligno_por_semilla": [
+        0.7439024390243902,
+        0.6707317073170732,
+        0.6790123456790124
+      ],
+      "sens_maligno_medio": 0.6978821640068252,
+      "f1_macro_por_semilla": [
+        0.6074248799353988,
+        0.5061164843773539,
+        0.6794613836867359
+      ],
+      "f1_macro_medio": 0.5976675826664962,
+      "segmentado": true
+    }
+  },
+  "semillas": [
+    0,
+    1,
+    2
+  ]
+}
