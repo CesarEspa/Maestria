@@ -1,0 +1,8 @@
+modelo,malignos_total,mal_a_normal,mal_a_benigno
+M1,239,80,57
+M2,239,159,0
+M3,239,80,0
+M4,239,53,45
+M5,239,37,20
+SVM_grupos,239,14,0
+SVM_imagen,252,0,0

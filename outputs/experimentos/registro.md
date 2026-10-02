@@ -232,6 +232,63 @@ honestidad en el resumen final.
 Commit y push de la Tarea 4 hechos tal cual (sin alterar el criterio ni el resultado
 de la selección). Se continúa automáticamente con la Tarea 5.
 
+---
+
+## Tarea 5 — Evaluación en prueba y estadística (completada 2026-10-02)
+
+Ejecutada en menos de 10 minutos (solo inferencia + cálculos estadísticos, sin
+entrenar nada). Nota técnica: los `print()` normales de Python quedan bufferizados
+cuando no hay TTY (a diferencia de `model.fit(verbose=1)`, que sí hace flush), así
+que el log no mostró progreso en tiempo real — se verificó el avance directamente por
+la aparición de los archivos de salida (`pred_test.npz`, `metricas_por_semilla.csv`,
+etc.) en vez de leer el log. Para la Tarea 6 se lanzará con `python -u` para evitarlo.
+
+**Resumen agregado (`resumen_ic95.csv`, IC 95% bootstrap sobre test agregado de 3
+semillas, 2000 remuestreos):**
+
+| Modelo | Exactitud | F1 Macro | AUC macro | Sens. Maligno | Sens. Benigno |
+|---|---:|---:|---:|---:|---:|
+| M1 | 0.50 | 0.35 | 0.70-0.78 | 0.43 | 0.24 |
+| M2 | 0.45 | 0.26 | 0.46-0.56 | 0.33 | 0.21 |
+| M3 | 0.47 | 0.21 | 0.51-0.59 | 0.67 | **0.00 (de=0.00)** |
+| M4 | 0.66 | 0.56 | 0.81 | 0.59 | 0.24 |
+| M5 | 0.68 | 0.57 | 0.83 | 0.76 | 0.31 |
+| SVM_grupos | **0.86** | **0.67** | **0.88** | 0.94 | 0.21 |
+| SVM_imagen | 1.00 | 1.00 | 1.00 | 1.00 | 0.98 |
+
+**M3 confirma en TEST el colapso ya detectado en validación (Tarea 4):**
+`sens_benigno = 0.00` con desviación estándar 0.00 entre las 3 semillas — nunca,
+en ninguna semilla, predice "Benigno" ni una sola vez (0/54 casos Benigno en la matriz
+agregada). McNemar (modelo recomendado M3 vs. resto, agregado) confirma diferencias
+altamente significativas contra M4 (p≈9e-11), M5 (p≈3e-11) y SVM_grupos (p≈3e-46,
+tras corrección de Holm) — pero NO contra M1 (p=0.38) ni M2 (p=0.46), consistente con
+que M1 y M2 también colapsan (de formas distintas según la semilla), así que no son
+estadísticamente distinguibles de M3 en conjunto.
+
+**SVM_grupos resulta ser el modelo con mejor desempeño agregado de los 7** (exactitud
+0.86, F1 macro 0.67, AUC 0.88) — superando a M4 y M5. Con partición correcta
+(por grupos), el SVM+HOG deja de ser la señal de alarma que era en el protocolo
+anterior y pasa a ser un contendiente legítimo.
+
+**SVM_imagen confirma la inflación por fuga de forma contundente:** exactitud
+0.998 vs. 0.857 de SVM_grupos, AUC 1.000 vs. 0.876, visible con total claridad en
+`curvas_roc_final.png` (curva gris pegada a la esquina) y `svm_imagen_vs_grupos.png`
+— la pieza central de evidencia de todo este protocolo corregido.
+
+**Errores clínicos (`errores_maligno.csv`, 239-252 malignos de test según partición):**
+M2 es el peor (159/239 malignos clasificados como "Normal" — el error más grave
+posible); M3 también comete 80/239 maligno→normal (su colapso en semilla 0 predice
+"Normal"); M4 y M5 reducen sustancialmente estos errores (53 y 37 respectivamente);
+SVM_grupos solo 14/239; SVM_imagen 0/252 (por la fuga, no por mérito real).
+
+Archivos: `metricas_por_semilla.csv`, `resumen_ic95.csv`, `mcnemar.csv`,
+`errores_maligno.csv`, `matrices_confusion_agregadas.json`, y las figuras
+`resumen_modelos_ic.png`, `matrices_confusion_agregadas.png`, `curvas_roc_final.png`,
+`svm_imagen_vs_grupos.png` — las 4 revisadas visualmente, correctas.
+
+Commit y push de la Tarea 5. Se continúa automáticamente con la Tarea 6
+(explicabilidad).
+
 **Archivos generados:**
 - `src/protocolo.py`
 - `outputs/splits/imagenes_224.npz`
