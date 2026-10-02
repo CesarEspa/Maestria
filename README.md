@@ -9,6 +9,22 @@ Autor: César Libardo España Salguero
 > Ver la sección [Limitaciones](#limitaciones-y-consideraciones-éticas) antes
 > de interpretar cualquier resultado.
 
+> 🔁 **Corrección metodológica importante (octubre 2026).** La tutora del TFM
+> revisó el proyecto y detectó que la partición train/val/test **a nivel de
+> imagen** permitía que cortes casi idénticos del mismo paciente quedaran
+> repartidos entre entrenamiento y prueba (fuga de datos) — ver
+> [Protocolo corregido](#protocolo-corregido-partición-por-grupos-de-paciente)
+> para el detalle completo. Se implementó un protocolo nuevo con **partición
+> por grupos de paciente**, parada temprana por F1 macro, búsqueda de
+> hiperparámetros documentada, 3 semillas con IC 95% por bootstrap y pruebas
+> de McNemar. **Los resultados de esa sección son los que cuentan para las
+> conclusiones del TFM.** La sección [Resultados](#resultados) y buena parte
+> de [Hallazgos y análisis](#hallazgos-y-análisis) más abajo documentan la
+> ronda **preliminar** (partición por imagen, con la fuga ya descrita) — se
+> conservan íntegras porque el documento del TFM las cita como antecedente
+> metodológico, no porque sigan vigentes como resultado final. Sus modelos y
+> figuras se movieron a `outputs/legacy_particion_imagen/`.
+
 ---
 
 ## Índice
@@ -20,10 +36,11 @@ Autor: César Libardo España Salguero
 5. [Cómo ejecutar el pipeline](#cómo-ejecutar-el-pipeline)
 6. [App web interactiva](#app-web-interactiva)
 7. [Metodología](#metodología)
-8. [Resultados](#resultados)
-9. [Hallazgos y análisis](#hallazgos-y-análisis)
-10. [Limitaciones y consideraciones éticas](#limitaciones-y-consideraciones-éticas)
-11. [Trabajo futuro](#trabajo-futuro)
+8. [Resultados (ronda preliminar — partición por imagen)](#resultados)
+9. [Hallazgos y análisis (ronda preliminar)](#hallazgos-y-análisis)
+10. [**Protocolo corregido (partición por grupos de paciente)**](#protocolo-corregido-partición-por-grupos-de-paciente)
+11. [Limitaciones y consideraciones éticas](#limitaciones-y-consideraciones-éticas)
+12. [Trabajo futuro](#trabajo-futuro)
 
 ---
 
@@ -115,24 +132,40 @@ tfm-lung-cancer/
 │   ├── 06_evaluate.py            # Evaluación comparativa de los modelos Keras en test
 │   ├── 07_gradcam.py             # Mapas Grad-CAM sobre el mejor modelo
 │   ├── 07b_gradcam_segmentado.py # Mapas Grad-CAM sobre el modelo segmentado
-│   ├── 08_baseline_ml.py         # Línea base clásica: HOG + SVM
+│   ├── 08_baseline_ml.py         # Línea base clásica: HOG + SVM (ronda preliminar)
 │   ├── progress_tracker.py       # Callback de Keras que registra progreso para la app web
-│   ├── gradcam_utils.py          # Funciones Grad-CAM compartidas
+│   ├── gradcam_utils.py          # Grad-CAM, Grad-CAM++ y Score-CAM compartidos
 │   ├── model_utils.py            # Preprocesamiento e inferencia compartidos
 │   ├── results_utils.py          # Carga de métricas/figuras compartida
 │   ├── training_control.py       # Lanzar/detener entrenamientos, estado
 │   ├── api.py                    # Backend FastAPI (API REST)
-│   └── frontend/                 # Frontend HTML/CSS/JS servido por api.py
-│       ├── index.html
-│       ├── style.css
-│       └── app.js
+│   ├── frontend/                 # Frontend HTML/CSS/JS servido por api.py
+│   │   ├── index.html
+│   │   ├── style.css
+│   │   └── app.js
+│   │
+│   │   # ── Protocolo corregido (partición por grupos de paciente) ──────
+│   ├── 02c_grupos_paciente.py      # Reconstruye grupos de paciente y particiones por grupos/imagen
+│   ├── protocolo.py                # Infraestructura común: datos, aumento, F1 early stopping, entrenar()
+│   ├── 08b_busqueda_hiperparametros.py  # Tarea 3: rejilla M1-M5, solo validación, semilla 0
+│   ├── 08c_entrenamiento_final.py       # Tarea 4: M1-M5 + SVM en 3 semillas, selección pre-test
+│   ├── 09_evaluacion_final.py           # Tarea 5: test (una vez), bootstrap IC95%, McNemar
+│   ├── 10_explicabilidad.py             # Tarea 6: Grad-CAM/++/Score-CAM + métricas objetivas
+│   └── 11_tablas_y_entorno.py           # Tarea 7: tablas descriptivas, pipeline, entorno
 ├── outputs/
-│   ├── figures/                  # Gráficos y JSON de métricas para el TFM
-│   ├── models/                   # Modelos entrenados (.keras y .joblib)
-│   ├── gradcam/                  # Imágenes Grad-CAM
-│   ├── splits/                   # dataset_splits.npz (arrays preprocesados)
+│   ├── figures/                  # Figuras del protocolo corregido (resultados vigentes)
+│   ├── models/                   # (vacío tras la corrección — ver experimentos/runs/)
+│   ├── gradcam/                  # Grad-CAM del protocolo corregido
+│   ├── experimentos/             # Protocolo corregido: CSV/JSON de resultados + runs/
+│   │   ├── registro.md             # Bitácora completa, tarea por tarea, con incidencias
+│   │   ├── RESUMEN_PARA_DOCUMENTO.md  # Resumen consolidado listo para el TFM
+│   │   └── runs/<nombre>/          # Un run por (escenario, hp, semilla): modelo, historial, predicciones
+│   ├── legacy_particion_imagen/  # Ronda preliminar (partición por imagen, con fuga) — ver aviso al inicio
+│   │   ├── figures/, models/, gradcam/
+│   ├── splits/                   # Caches de imágenes y particiones (ambas rondas)
 │   └── progress/                 # Estado de entrenamiento en vivo (JSON) + logs
 ├── requirements.txt               # Todas las dependencias (pipeline + backend web)
+├── PROMPT_CORRECCIONES_TUTORA.md   # Instrucciones completas de la corrección metodológica
 ├── PROYECTO_CLAUDE_CONTEXTO.txt    # Contexto completo del proyecto (para IA/documentación)
 └── README.md
 ```
@@ -190,15 +223,19 @@ el backend FastAPI juntos, sin conflictos de dependencias.
 
 ## Cómo ejecutar el pipeline
 
+> Esta secuencia es la de la **ronda preliminar** (partición por imagen). Para
+> reproducir el **protocolo corregido** (el que cuenta para las conclusiones),
+> ver [la subsección siguiente](#pipeline-del-protocolo-corregido).
+
 Los scripts se ejecutan en orden desde `src/`, y cada uno depende de los
 artefactos generados por el anterior (splits en `outputs/splits/`, modelos en
-`outputs/models/`):
+`outputs/legacy_particion_imagen/models/`):
 
 ```bash
 cd src
 export PYTHONIOENCODING=utf-8   # o $env:PYTHONIOENCODING="utf-8" en PowerShell
 
-python 01_eda.py                # Análisis exploratorio → outputs/figures/
+python 01_eda.py                # Análisis exploratorio
 python 02_preprocessing.py      # Split 70/15/15 → outputs/splits/dataset_splits.npz
 python 02b_segmentation.py      # Segmentación pulmonar → dataset_splits_segmented.npz (~2-3 min)
 python 03_train_cnn_base.py     # ~35-50 min en CPU (hasta 120 épocas, paciencia 12)
@@ -214,7 +251,31 @@ python 08_baseline_ml.py        # Línea base SVM + HOG (~1-2 min)
 
 Cada script guarda sus resultados (figuras, modelos, métricas) en `outputs/`.
 Los scripts 03, 04, 05 y 08 también actualizan `outputs/progress/<modelo>.json`
-en vivo, que consume la app web descrita a continuación.
+en vivo, que consume la app web descrita a continuación. (Estos modelos y
+figuras viven ahora en `outputs/legacy_particion_imagen/` — ver el aviso al
+inicio del documento.)
+
+### Pipeline del protocolo corregido
+
+```bash
+cd src
+export PYTHONIOENCODING=utf-8
+
+python 02c_grupos_paciente.py          # Grupos de paciente + particiones por grupos/imagen (segundos)
+python 08b_busqueda_hiperparametros.py # Rejilla M1-M5, solo validación, semilla 0 (varias horas en CPU)
+python 08c_entrenamiento_final.py      # M1-M5 + SVM en 3 semillas (la parte más larga, varias horas)
+python 09_evaluacion_final.py          # Test (una vez), bootstrap IC95%, McNemar (minutos)
+python 10_explicabilidad.py            # Grad-CAM/++/Score-CAM + métricas objetivas (minutos)
+python 11_tablas_y_entorno.py          # Tablas descriptivas, pipeline, entorno (minutos)
+```
+
+Todos los scripts de este protocolo son **reanudables**: si un `entrenar()` ya
+produjo `modelo.keras` para una combinación (escenario, hiperparámetros,
+semilla), se salta y pasa al siguiente. Para procesos largos (`08b`, `08c`) en
+Windows, se recomienda lanzarlos desacoplados de la terminal
+(`nohup ... > log.txt 2>&1 < /dev/null & disown` en Git Bash) para que
+sobrevivan si se cierra la sesión — ver "Incidencias técnicas destacadas" en
+[Protocolo corregido](#protocolo-corregido-partición-por-grupos-de-paciente).
 
 ## App web interactiva
 
@@ -300,6 +361,11 @@ partida sobre el que construir esas extensiones, no una versión final.
 
 ## Metodología
 
+> Esta sección describe la **ronda preliminar** (partición por imagen). La
+> metodología del protocolo corregido (partición por grupos, parada por F1
+> macro, búsqueda de hiperparámetros, 3 semillas) se describe en
+> [Protocolo corregido](#protocolo-corregido-partición-por-grupos-de-paciente).
+
 ### Preprocesamiento (`02_preprocessing.py`)
 
 - Carga de las 1097 imágenes, conversión a RGB, redimensionado a 224×224 px
@@ -375,8 +441,13 @@ anterior, de 80/50 épocas):**
 
 ## Resultados
 
-*(Tabla generada a partir de `outputs/figures/metricas_comparativas.json` y
-`outputs/figures/metricas_svm_baseline.json` tras ejecutar `06_evaluate.py`
+> ⚠️ **Ronda preliminar (partición por imagen, con fuga de datos conocida —
+> ver aviso al inicio del documento).** Para los resultados vigentes del
+> protocolo corregido, ver
+> [Protocolo corregido](#protocolo-corregido-partición-por-grupos-de-paciente).
+
+*(Tabla generada a partir de `outputs/legacy_particion_imagen/figures/metricas_comparativas.json` y
+`outputs/legacy_particion_imagen/figures/metricas_svm_baseline.json` tras ejecutar `06_evaluate.py`
 y `08_baseline_ml.py`. Valores medidos sobre el conjunto de **test**, 165
 imágenes.)*
 
@@ -442,25 +513,25 @@ de forzar un único "ganador".
 Figuras nuevas de esta ronda: `curvas_roc_comparativas.png` (las 4 curvas
 ROC macro-average superpuestas) y `classification_report_<modelo>.png`
 (precision/recall/f1/support por clase, como imagen, para cada uno de los
-4 modelos) en `outputs/figures/`.
+4 modelos) en `outputs/legacy_particion_imagen/figures/`.
 
 ### Catálogo de figuras generadas
 
-Cada figura de `outputs/figures/` (y el grid de Grad-CAM, en
-`outputs/gradcam/`) con su imagen incrustada, para que quede claro de un
+Cada figura de `outputs/legacy_particion_imagen/figures/` (y el grid de Grad-CAM, en
+`outputs/legacy_particion_imagen/gradcam/`) con su imagen incrustada, para que quede claro de un
 vistazo cuál es cuál, y el resultado concreto que aporta cada una — listo
 para usar como pie de figura en el TFM.
 
 #### Análisis exploratorio del dataset (`01_eda.py`)
 
-<img src="outputs/figures/distribucion_clases.png" width="620">
+<img src="outputs/legacy_particion_imagen/figures/distribucion_clases.png" width="620">
 
 **`distribucion_clases.png`** — Nº de imágenes por clase. **Resultado:**
 desbalance claro: Maligno (561) tiene más de 4.5× las imágenes de Benigno
 (120); Normal queda en medio (416). Justifica usar
 `class_weight="balanced"` en los tres modelos de Keras.
 
-<img src="outputs/figures/distribucion_tamanos.png" width="620">
+<img src="outputs/legacy_particion_imagen/figures/distribucion_tamanos.png" width="620">
 
 **`distribucion_tamanos.png`** — Histogramas de ancho y alto originales
 (antes de normalizar). **Resultado:** pese a que el rango declarado es
@@ -470,7 +541,7 @@ atípicos se aparta de ese valor. Confirma que redimensionar todo a
 224×224 px es una normalización segura, sin distorsión desigual entre
 imágenes.
 
-<img src="outputs/figures/distribucion_intensidad.png" width="620">
+<img src="outputs/legacy_particion_imagen/figures/distribucion_intensidad.png" width="620">
 
 **`distribucion_intensidad.png`** — Densidad de intensidad de píxel
 (0-255) superpuesta por clase. **Resultado:** distribución bimodal (pico
@@ -480,7 +551,7 @@ sí sola no separa las clases — justifica que la tarea necesite un modelo
 que aprenda patrones espaciales/texturales, no solo estadísticos de
 intensidad.
 
-<img src="outputs/figures/muestras_por_clase.png" width="620">
+<img src="outputs/legacy_particion_imagen/figures/muestras_por_clase.png" width="620">
 
 **`muestras_por_clase.png`** — 9 cortes axiales de TC de tórax de
 ejemplo (3 por clase). **Resultado:** referencia visual cualitativa; en
@@ -490,7 +561,7 @@ no hay hallazgos evidentes — aunque la diferencia no siempre es obvia a
 simple vista, lo que refuerza por qué hace falta un modelo entrenado en
 vez de una regla visual simple.
 
-<img src="outputs/figures/muestras_augmentation.png" width="620">
+<img src="outputs/legacy_particion_imagen/figures/muestras_augmentation.png" width="620">
 
 **`muestras_augmentation.png`** — 1 imagen original + 9 variantes
 generadas por la capa de aumento de datos (flip horizontal, rotación
@@ -499,7 +570,7 @@ sutiles y anatómicamente plausibles para una TC de tórax — por eso se
 descartaron explícitamente el flip vertical y la traslación, que no lo
 son (ver [Metodología](#metodología)).
 
-<img src="outputs/figures/ejemplos_segmentacion.png" width="620">
+<img src="outputs/legacy_particion_imagen/figures/ejemplos_segmentacion.png" width="620">
 
 **`ejemplos_segmentacion.png`** (`02b_segmentation.py`) — original,
 máscara binaria y resultado segmentado, un ejemplo por clase.
@@ -510,7 +581,7 @@ datos.
 
 #### CNN Base
 
-<img src="outputs/figures/curvas_cnn_base.png" width="620">
+<img src="outputs/legacy_particion_imagen/figures/curvas_cnn_base.png" width="620">
 
 **`curvas_cnn_base.png`** — Pérdida y exactitud de entrenamiento/
 validación por época. **Resultado:** convergencia sana — la pérdida de
@@ -518,14 +589,14 @@ validación baja de forma sostenida hasta estabilizarse alrededor de la
 época 22 (val_loss 0.5875, val_accuracy 0.861), sin la explosión de
 pérdida de la primera ronda (ver [Hallazgo #1](#hallazgos-y-análisis)).
 
-<img src="outputs/figures/confusion_matrix_cnn_base.png" width="480">
+<img src="outputs/legacy_particion_imagen/figures/confusion_matrix_cnn_base.png" width="480">
 
 **`confusion_matrix_cnn_base.png`** — Matriz de confusión 3×3 sobre las
 165 imágenes de test. **Resultado:** los errores se concentran en
 confundir Benigno con Normal (10 de 18 casos Benigno se predicen como
 Normal); Maligno prácticamente sin errores (83/84).
 
-<img src="outputs/figures/classification_report_cnn_base.png" width="480">
+<img src="outputs/legacy_particion_imagen/figures/classification_report_cnn_base.png" width="480">
 
 **`classification_report_cnn_base.png`** — Precision/recall/f1/support
 por clase. **Resultado:** precisión muy dispar entre clases — Maligno
@@ -535,7 +606,7 @@ Normal vista en la matriz.
 
 #### CNN + Augmentation
 
-<img src="outputs/figures/curvas_cnn_augmented.png" width="620">
+<img src="outputs/legacy_particion_imagen/figures/curvas_cnn_augmented.png" width="620">
 
 **`curvas_cnn_augmented.png`** — Pérdida y exactitud de entrenamiento/
 validación por época. **Resultado:** patrón de colapso — la exactitud de
@@ -543,7 +614,7 @@ validación se congela casi desde la época 1 (mejor punto: la propia
 época 1, val_loss 1.019, val_accuracy 0.509) y nunca vuelve a mejorar,
 mientras la de entrenamiento sigue moviéndose.
 
-<img src="outputs/figures/confusion_matrix_cnn_augmentation.png" width="480">
+<img src="outputs/legacy_particion_imagen/figures/confusion_matrix_cnn_augmentation.png" width="480">
 
 **`confusion_matrix_cnn_augmentation.png`** — Matriz de confusión.
 **Resultado:** la firma visual inequívoca de un modelo colapsado a una
@@ -551,7 +622,7 @@ sola clase — la columna "Maligno" recibe las 165 predicciones (18/18
 Benigno, 84/84 Maligno, 63/63 Normal mal clasificados como Maligno,
 salvo los 84 que sí lo son).
 
-<img src="outputs/figures/classification_report_cnn_augmentation.png" width="480">
+<img src="outputs/legacy_particion_imagen/figures/classification_report_cnn_augmentation.png" width="480">
 
 **`classification_report_cnn_augmentation.png`** — Precision/recall/f1
 por clase. **Resultado:** precision y recall en 0.000 para Benigno y
@@ -561,7 +632,7 @@ mayoritaria.
 
 #### Transfer Learning (EfficientNetB0)
 
-<img src="outputs/figures/curvas_transfer_learning.png" width="620">
+<img src="outputs/legacy_particion_imagen/figures/curvas_transfer_learning.png" width="620">
 
 **`curvas_transfer_learning.png`** — Pérdida y exactitud de
 entrenamiento/validación por época. **Resultado:** las dos fases del
@@ -569,7 +640,7 @@ entrenamiento se distinguen con claridad — el salto de exactitud al
 iniciar la fase 2 (fine-tuning) tras 9 épocas de fase 1, hasta
 estabilizarse en el mejor punto (val_loss 0.4993, val_accuracy 0.830).
 
-<img src="outputs/figures/confusion_matrix_transfer_learning.png" width="480">
+<img src="outputs/legacy_particion_imagen/figures/confusion_matrix_transfer_learning.png" width="480">
 
 **`confusion_matrix_transfer_learning.png`** — Matriz de confusión.
 **Resultado:** errores más repartidos y en ambas direcciones que la CNN
@@ -577,7 +648,7 @@ Base (15/18 Benigno correcto, 72/84 Maligno, 44/63 Normal) — ningún
 error masivo hacia una sola clase, coherente con su sensibilidad más
 equilibrada.
 
-<img src="outputs/figures/classification_report_transfer_learning.png" width="480">
+<img src="outputs/legacy_particion_imagen/figures/classification_report_transfer_learning.png" width="480">
 
 **`classification_report_transfer_learning.png`** — Precision/recall/f1
 por clase. **Resultado:** precisión también más pareja que la CNN Base
@@ -592,21 +663,21 @@ datos segmentados en vez de los originales — ver
 [Hallazgo #8](#hallazgos-y-análisis) para el análisis completo de por
 qué no mejoró.
 
-<img src="outputs/figures/curvas_transfer_learning_segmentado.png" width="620">
+<img src="outputs/legacy_particion_imagen/figures/curvas_transfer_learning_segmentado.png" width="620">
 
 **`curvas_transfer_learning_segmentado.png`** — **Resultado:** converge
 de forma estable (val_loss 0.5914, val_accuracy 0.764), sin señales de
 colapso — el entrenamiento en sí funcionó bien, el problema está en que
 el resultado final no supera al del modelo sin segmentar.
 
-<img src="outputs/figures/confusion_matrix_transfer_learning_segmentacion.png" width="480">
+<img src="outputs/legacy_particion_imagen/figures/confusion_matrix_transfer_learning_segmentacion.png" width="480">
 
 **`confusion_matrix_transfer_learning_segmentacion.png`** — **Resultado:**
 más confusión entre Benigno y Normal en ambas direcciones (10/18
 Benigno correcto, antes 15/18) que el modelo sin segmentar, aunque
 Maligno mejora levemente (75/84, antes 72/84).
 
-<img src="outputs/figures/classification_report_transfer_learning_segmentacion.png" width="480">
+<img src="outputs/legacy_particion_imagen/figures/classification_report_transfer_learning_segmentacion.png" width="480">
 
 **`classification_report_transfer_learning_segmentacion.png`** —
 **Resultado:** F1 macro 0.6968 (antes 0.7330) y AUC-ROC 0.9118 (antes
@@ -624,7 +695,7 @@ mezclando las etiquetas en la misma proporción que el área intercambiada
 "intercambio de píxeles"). Ver [Hallazgo #9](#hallazgos-y-análisis) para
 el análisis completo.
 
-<img src="outputs/figures/muestras_cutmix.png" width="720">
+<img src="outputs/legacy_particion_imagen/figures/muestras_cutmix.png" width="720">
 
 **`muestras_cutmix.png`** — 8 ejemplos de un batch tras aplicar CutMix,
 con la etiqueta mezclada resultante. **Resultado:** el parche rectangular
@@ -634,7 +705,7 @@ mezclada corresponde exactamente a la proporción de área intercambiada
 confirma que la mezcla de píxeles y de etiquetas está implementada
 correctamente.
 
-<img src="outputs/figures/curvas_cnn_cutmix.png" width="620">
+<img src="outputs/legacy_particion_imagen/figures/curvas_cnn_cutmix.png" width="620">
 
 **`curvas_cnn_cutmix.png`** — **Resultado:** el entrenamiento se detiene
 en la época 13 (paciencia 12 sin mejorar `val_loss`); la pérdida de
@@ -643,14 +714,14 @@ exactitud de validación llega a picos de hasta 73.3% (época 9) — un pico
 que `EarlyStopping` descarta porque vigila `val_loss`, no `val_accuracy`,
 y ese pico no coincide con la época de menor pérdida.
 
-<img src="outputs/figures/confusion_matrix_cnn_cutmix.png" width="480">
+<img src="outputs/legacy_particion_imagen/figures/confusion_matrix_cnn_cutmix.png" width="480">
 
 **`confusion_matrix_cnn_cutmix.png`** — **Resultado:** exactamente el
 mismo colapso que CNN + Augmentation — 100% de las 165 imágenes de test
 predichas como "Maligno" (18/18 Benigno mal clasificado, 84/84 Maligno
 correcto solo porque acierta por descarte, 63/63 Normal mal clasificado).
 
-<img src="outputs/figures/classification_report_cnn_cutmix.png" width="480">
+<img src="outputs/legacy_particion_imagen/figures/classification_report_cnn_cutmix.png" width="480">
 
 **`classification_report_cnn_cutmix.png`** — **Resultado:** exactitud
 0.5091, F1 macro 0.2249, AUC-ROC 0.7175 — prácticamente idénticos a los
@@ -660,7 +731,7 @@ confirma**.
 
 #### SVM (HOG) — línea base
 
-<img src="outputs/figures/confusion_matrix_svm_baseline.png" width="480">
+<img src="outputs/legacy_particion_imagen/figures/confusion_matrix_svm_baseline.png" width="480">
 
 **`confusion_matrix_svm_baseline.png`** — Matriz de confusión.
 **Resultado:** diagonal perfecta, sin un solo error (18/18, 84/84,
@@ -669,7 +740,7 @@ datos (ver [Hallazgo #5](#hallazgos-y-análisis)); ningún clasificador
 clásico sin aprendizaje de representaciones debería lograr esto en un
 problema médico real.
 
-<img src="outputs/figures/classification_report_svm_baseline.png" width="480">
+<img src="outputs/legacy_particion_imagen/figures/classification_report_svm_baseline.png" width="480">
 
 **`classification_report_svm_baseline.png`** — Precision/recall/f1 por
 clase. **Resultado:** 1.000 en las tres métricas para las tres clases —
@@ -677,7 +748,7 @@ mismo resultado, misma advertencia.
 
 #### Comparación entre los 5 modelos de Keras (+ SVM)
 
-<img src="outputs/figures/curvas_roc_comparativas.png" width="620">
+<img src="outputs/legacy_particion_imagen/figures/curvas_roc_comparativas.png" width="620">
 
 **`curvas_roc_comparativas.png`** — Curvas ROC macro-average
 (one-vs-rest) de los 5 modelos de Keras + la SVM, superpuestas, con el
@@ -689,7 +760,7 @@ CNN + Augmentation y CNN + CutMix, cuyas curvas prácticamente se
 superponen entre sí (AUC 0.7233 vs. 0.7175) y se acercan mucho más a la
 diagonal aleatoria en la zona de FPR bajo-medio.
 
-<img src="outputs/figures/tabla_comparativa.png" width="620">
+<img src="outputs/legacy_particion_imagen/figures/tabla_comparativa.png" width="620">
 
 **`tabla_comparativa.png`** — Exactitud, AUC-ROC, F1 macro y sensibilidad
 por clase de los 5 modelos de Keras (la SVM se trata aparte, sin
@@ -697,7 +768,7 @@ retocarla — ver [Limitaciones](#limitaciones-y-consideraciones-éticas)).
 Es la misma información que la mitad izquierda de la tabla de
 [Resultados](#resultados), renderizada como imagen.
 
-<img src="outputs/figures/tabla_comparativa_especificidad.png" width="620">
+<img src="outputs/legacy_particion_imagen/figures/tabla_comparativa_especificidad.png" width="620">
 
 **`tabla_comparativa_especificidad.png`** — Especificidad por clase
 (uno-contra-el-resto) de los 5 modelos de Keras, calculada desde su
@@ -709,7 +780,7 @@ como i. **Resultado:** CNN Base tiene la especificidad macro más alta
 empatan en la más baja (0.6667), ambas arrastradas por su 0.0000 en
 Maligno.
 
-<img src="outputs/figures/sensibilidad_especificidad.png" width="720">
+<img src="outputs/legacy_particion_imagen/figures/sensibilidad_especificidad.png" width="720">
 
 **`sensibilidad_especificidad.png`** — Gráfico de barras agrupadas:
 sensibilidad y especificidad por clase, para los 6 modelos (5 de Keras +
@@ -726,7 +797,7 @@ sola cuenta la historia completa.
 
 #### Explicabilidad
 
-<img src="outputs/gradcam/gradcam_grid.png" width="720">
+<img src="outputs/legacy_particion_imagen/gradcam/gradcam_grid.png" width="720">
 
 **`gradcam_grid.png`** — 9 mapas Grad-CAM (original + calor superpuesto)
 del modelo de Transfer Learning, 3 ejemplos por clase, con la predicción
@@ -737,7 +808,7 @@ predicha — evidencia visual directa de que el mapa no señala regiones
 anatómicas relevantes para la decisión del modelo (ver
 [Hallazgo #6](#hallazgos-y-análisis)).
 
-<img src="outputs/gradcam/gradcam_grid_segmentado.png" width="720">
+<img src="outputs/legacy_particion_imagen/gradcam/gradcam_grid_segmentado.png" width="720">
 
 **`gradcam_grid_segmentado.png`** (`07b_gradcam_segmentado.py`) — mismo
 formato, sobre el modelo Transfer Learning + Segmentación.
@@ -750,6 +821,13 @@ problema de explicabilidad, no lo resolvió — ver
 [Hallazgo #8](#hallazgos-y-análisis).
 
 ## Hallazgos y análisis
+
+> ⚠️ **Hallazgos de la ronda preliminar (partición por imagen).** Siguen
+> siendo relevantes como proceso de diagnóstico y narrativa metodológica
+> (así se citan en el documento del TFM), pero las cifras concretas de
+> exactitud/F1/AUC de esta sección están infladas por la fuga de datos
+> descrita en el aviso inicial. Los hallazgos del protocolo corregido están
+> en [esa sección](#protocolo-corregido-partición-por-grupos-de-paciente).
 
 ### 1. Primera ronda: las CNN entrenadas desde cero colapsan a predecir una única clase
 
@@ -1030,14 +1108,14 @@ estadísticamente sobre 150 imágenes aleatorias (ninguna máscara vacía
 ni sospechosamente grande sin explicación anatómica) antes de procesar
 el dataset completo:
 
-<img src="outputs/figures/ejemplos_segmentacion.png" width="620">
+<img src="outputs/legacy_particion_imagen/figures/ejemplos_segmentacion.png" width="620">
 
 **`ejemplos_segmentacion.png`** — original, máscara binaria y resultado
 segmentado, un ejemplo por clase.
 
 **Resultado del reentrenamiento — no mejoró:**
 
-<img src="outputs/figures/curvas_transfer_learning_segmentado.png" width="620">
+<img src="outputs/legacy_particion_imagen/figures/curvas_transfer_learning_segmentado.png" width="620">
 
 Exactitud 0.7879 (vs. 0.7939 del modelo original — prácticamente igual),
 pero **AUC-ROC 0.9118 (vs. 0.9563) y F1 macro 0.6968 (vs. 0.7330), ambos
@@ -1056,7 +1134,7 @@ pulmón — ver `ejemplos_segmentacion.png`).
 **La pregunta concreta sobre Grad-CAM — la respuesta es más interesante
 de lo esperado:**
 
-<img src="outputs/gradcam/gradcam_grid_segmentado.png" width="720">
+<img src="outputs/legacy_particion_imagen/gradcam/gradcam_grid_segmentado.png" width="720">
 
 El artefacto original (un único píxel saturado siempre en la esquina
 inferior derecha, [Hallazgo #6](#hallazgos-y-análisis)) **desaparece**
@@ -1105,14 +1183,14 @@ cada imagen por separado — ¿evita ese colapso?
 **Respuesta: no.** El resultado es prácticamente idéntico, cifra por
 cifra:
 
-<img src="outputs/figures/muestras_cutmix.png" width="620">
+<img src="outputs/legacy_particion_imagen/figures/muestras_cutmix.png" width="620">
 
 `muestras_cutmix.png` confirma que la técnica está bien implementada:
 el parche rectangular intercambiado es visible a simple vista y la
 etiqueta mezclada corresponde exactamente a la proporción de área
 intercambiada.
 
-<img src="outputs/figures/curvas_cnn_cutmix.png" width="620">
+<img src="outputs/legacy_particion_imagen/figures/curvas_cnn_cutmix.png" width="620">
 
 El entrenamiento se detiene en la época 13 (`EarlyStopping`, paciencia
 12). La pérdida de validación **nunca mejora respecto a su valor en la
@@ -1125,7 +1203,7 @@ más alta que la de la época 1, así que `restore_best_weights` descarta
 ese pico y se queda con los pesos de una época muy temprana, antes de
 que el modelo aprendiera a discriminar clases de forma real.
 
-<img src="outputs/figures/confusion_matrix_cnn_cutmix.png" width="480">
+<img src="outputs/legacy_particion_imagen/figures/confusion_matrix_cnn_cutmix.png" width="480">
 
 El resultado final: **100% de las 165 imágenes de test predichas como
 "Maligno"** — el mismo colapso exacto que CNN + Augmentation, celda por
@@ -1157,6 +1235,158 @@ evidencia metodológica que la propuesta del TFM pide documentar: probar
 la técnica de aumento avanzado explícitamente mencionada en el resumen
 y reportar con honestidad que, en este dataset y con esta arquitectura,
 tampoco resuelve el problema que sí resuelve transfer learning.
+
+## Protocolo corregido (partición por grupos de paciente)
+
+*(Octubre 2026. Fuente completa: `PROMPT_CORRECCIONES_TUTORA.md`,
+`outputs/experimentos/registro.md` —bitácora tarea por tarea— y
+`outputs/experimentos/RESUMEN_PARA_DOCUMENTO.md` —resumen consolidado con todas
+las tablas. Esta sección es un resumen de ese documento; para el detalle
+completo, incluidas las cifras de validación y las incidencias técnicas,
+consultar esos dos archivos.)*
+
+### Por qué se corrigió
+
+El dataset IQ-OTH/NCCD no trae identificador de paciente, pero los archivos
+están numerados en orden y los cortes consecutivos de un mismo paciente son
+casi idénticos. Con la partición train/val/test **por imagen** (la de toda la
+sección de Resultados anterior), el 89-95% de las imágenes de prueba tenía un
+"gemelo" casi idéntico en entrenamiento. Reconstruyendo 83 grupos de paciente
+por correlación entre cortes consecutivos (`src/02c_grupos_paciente.py`) y
+particionando **por grupo** en vez de por imagen, ese porcentaje baja a
+0-2.5%. Además se corrigieron otros 7 problemas metodológicos: parada
+temprana por F1 macro en vez de `val_loss` (ver si evita el colapso, más
+abajo), búsqueda de hiperparámetros documentada antes de tocar el test,
+aumento de datos unificado entre arquitecturas, 3 semillas con estadística
+(bootstrap + McNemar), Grad-CAM++ y Score-CAM además de Grad-CAM, y el
+criterio de "modelo recomendado" fijado *antes* de ver el conjunto de prueba
+(y centrado en sensibilidad Maligno, no Benigno).
+
+### Los 5 escenarios
+
+| Escenario | Arquitectura | Aumento | Entrada | Aísla |
+|---|---|---|---|---|
+| M1 | CNN propia | Ninguno | Original | Referencia |
+| M2 | CNN propia | Geométrico | Original | Aumento geométrico |
+| M3 | CNN propia | CutMix | Original | Aumento avanzado |
+| M4 | EfficientNetB0 | El mejor de M2/M3 (geométrico) | Original | Transferencia |
+| M5 | EfficientNetB0 | Igual que M4 | Segmentada | Segmentación |
+
+Más la línea base **SVM+HOG**, entrenada en ambas particiones (`SVM_grupos` y
+`SVM_imagen`) específicamente para cuantificar la inflación por fuga.
+
+### Resultados finales — test agregado de 3 semillas (0, 1, 2), IC 95% bootstrap
+
+| Modelo | Exactitud | F1 Macro | AUC macro | Sens. Maligno | Sens. Benigno |
+|---|---:|---:|---:|---:|---:|
+| M1 (CNN, sin aumento) | 0.502 | 0.346 | 0.779 | 0.426 | 0.241 |
+| M2 (CNN + geométrico) | 0.447 | 0.258 | 0.586 | 0.333 | 0.208 |
+| M3 (CNN + CutMix) | 0.468 | 0.212 | 0.614 | 0.667 | **0.000** |
+| M4 (EfficientNetB0) | 0.665 | 0.558 | 0.813 | 0.591 | 0.236 |
+| M5 (EfficientNetB0 + segmentación) | 0.684 | 0.568 | 0.827 | 0.762 | 0.312 |
+| **SVM_grupos** | **0.857** | **0.675** | **0.881** | 0.941 | 0.208 |
+| SVM_imagen (referencia, CON fuga) | 0.998 | 0.996 | 1.000 | 1.000 | 0.981 |
+
+**Con partición correcta, SVM_grupos es el modelo con mejor desempeño agregado
+de los 7**, superando a los 5 modelos profundos. Entre los modelos profundos,
+**M5 (EfficientNetB0 + segmentación) es el mejor**, con la sensibilidad
+Maligno más alta del grupo y sin señales de colapso. Comparar la fila
+`SVM_grupos` contra `SVM_imagen` —mismo método, mismos datos, solo cambia
+cómo se particionan— es la demostración más directa de todo el proyecto
+sobre el efecto de la fuga de datos (ver `svm_imagen_vs_grupos.png`).
+
+<img src="outputs/figures/resumen_modelos_ic.png" width="720">
+
+<img src="outputs/figures/curvas_roc_final.png" width="620">
+
+<img src="outputs/figures/svm_imagen_vs_grupos.png" width="620">
+
+### El criterio de "modelo recomendado" pre-registrado eligió un modelo colapsado — y eso se documenta tal cual
+
+Criterio fijado *antes* de ver el test (corrección explícita de la tutora:
+antes se elegía mirando la clase Benigno; ahora el criterio se centra en
+Maligno y se fija de antemano): mayor sensibilidad media en Maligno sobre
+VALIDACIÓN. Ese criterio escogió **M3** (CNN + CutMix), con sensibilidad
+Maligno de validación 0.780 frente al 0.698 de M5.
+
+El problema: al mirar el detalle por semilla, M3 tiene `sens_maligno=[0.34,
+1.00, 1.00]` junto con `f1_macro=[0.38, 0.23, 0.23]` — sensibilidad perfecta
+simultánea con F1 macro muy bajo es la firma de un modelo que **colapsó a
+predecir "Maligno" para todo**, no de un modelo que de verdad discrimina
+mejor. Confirmado en test: `sens_benigno = 0.000 ± 0.000` (nunca, en ninguna
+semilla, predijo "Benigno"). McNemar (`outputs/experimentos/mcnemar.csv`)
+confirma que M3 es significativamente peor que M4, M5 y SVM_grupos
+(p < 0.001 en los tres casos, agregado) pero no distinguible de M1/M2 (que
+también colapsan, de otras formas).
+
+**No se cambió el criterio ni el resultado tras detectar esto** — hacerlo
+retroactivamente habría violado el propósito mismo de fijar un criterio antes
+de ver el test. Se documenta como lo que es: una lección metodológica real
+sobre los límites de un criterio de sensibilidad "pura", sin ningún control
+de especificidad o balance entre clases.
+
+### ¿El aumento de datos sigue colapsando con parada por F1 macro? — Sí
+
+La hipótesis de la corrección #2 era que vigilar F1 macro (en vez de
+`val_loss`) evitaría el colapso de las CNN entrenadas con aumento de datos.
+**No lo evita.** Las 4 configuraciones de la rejilla de M1 (sin aumento)
+dieron exactamente la misma F1 macro de validación y el mismo patrón
+(`sens_benigno=0.00`) sin importar `lr` ni `dropout`; M3 (CutMix) reproduce
+esos mismos números de forma idéntica, y en test nunca predice "Benigno". M2
+(geométrico) colapsa a predecir "Normal" en 2 de 3 semillas (el peor registro
+de errores clínicos: 159/239 malignos clasificados como sanos). Solo los
+modelos de transferencia (M4, M5) no muestran este patrón en ninguna semilla.
+Conclusión: el colapso no dependía solo de `monitor="val_loss"` ni de la fuga
+de datos de la ronda anterior — persiste con partición por grupos y parada
+por F1. Detalle completo, con las curvas de aprendizaje, en
+`RESUMEN_PARA_DOCUMENTO.md` sección 3.
+
+### Explicabilidad: Grad-CAM++ y Score-CAM confirman el patrón "constante" con dos métodos más
+
+<img src="outputs/gradcam/comparacion_metodos_M4.png" width="720">
+
+Sobre M4 (EfficientNetB0), los tres métodos dan correlación entre clases
+distintas ≥ 0.9998 (prácticamente constantes): Grad-CAM reproduce el
+degradado izquierda-derecha ya documentado; Grad-CAM++ y Score-CAM muestran,
+los dos, un punto caliente fijo en la esquina inferior derecha. Que dos
+métodos con mecanismos de cálculo completamente distintos (uno basado en
+gradientes de orden superior, el otro sin gradientes, por enmascaramiento)
+reproduzcan el mismo patrón constante refuerza con fuerza que la causa es
+estructural —cómo EfficientNetB0 integra información espacial en su última
+capa— y no un artefacto de un método de explicabilidad en particular.
+Hallazgo adicional, más grave: de 42 mapas evaluados (todas las
+clases/métodos/aciertos), **0% cae mayormente dentro del tejido pulmonar
+real** — en su estado actual, ninguno de estos mapas sería fiable como apoyo
+visual para un radiólogo.
+
+### Catálogo de figuras y datos nuevos de esta ronda
+
+Todos los CSV/JSON en `outputs/experimentos/`; figuras en `outputs/figures/`
+y `outputs/gradcam/`. Lista completa con rutas exactas en
+`outputs/experimentos/RESUMEN_PARA_DOCUMENTO.md`, sección 7. Los pesos de los
+21 + 6 modelos entrenados en este protocolo (`modelo.keras`/`modelo.joblib`
+dentro de `outputs/experimentos/runs/<nombre>/`) no están en git por volumen
+— reproducibles reejecutando `entrenar()` de `src/protocolo.py` (resumible:
+si el archivo ya existe, se salta).
+
+### Incidencias técnicas destacadas
+
+- **Un primer intento de lanzar el entrenamiento largo en segundo plano se
+  perdió por completo** (límite de tiempo del entorno de ejecución, sin
+  checkpointing intra-entrenamiento) — corregido desacoplando el proceso del
+  entorno (`nohup ... & disown`) para que sobreviva indefinidamente.
+- **El sistema operativo entró en suspensión durante la noche** en dos
+  ocasiones, pausando el avance real varias horas (un entrenamiento tardó 360
+  min en vez de los ~30 habituales) — el proceso no murió, solo se alargó el
+  reloj de pared. Recomendado desactivar la suspensión automática mientras
+  corran procesos largos de este tipo.
+- **Con 3 semillas, el tiempo estimado para la búsqueda de hiperparámetros y
+  el entrenamiento final ya superaba el umbral de ~14h** fijado como límite
+  para decidir entre 3 y 5 semillas — se usaron 3, tal como preveía la propia
+  instrucción para ese caso. Detalle de la estimación en `registro.md`.
+
+Detalle completo de todas las incidencias, tarea por tarea, en
+`outputs/experimentos/registro.md`.
 
 ## Limitaciones y consideraciones éticas
 
@@ -1202,53 +1432,46 @@ tampoco resuelve el problema que sí resuelve transfer learning.
 
 ## Trabajo futuro
 
+**Resuelto en el [protocolo corregido](#protocolo-corregido-partición-por-grupos-de-paciente)
+(octubre 2026):**
+
+- ✅ Split a **nivel de grupo de paciente** (reconstruido por correlación entre
+  cortes consecutivos, sin necesitar los metadatos DICOM originales) — la
+  inflación por fuga se cuantificó directamente comparando `SVM_grupos`
+  (0.857 de exactitud) contra `SVM_imagen` (0.998).
+- ✅ **Grad-CAM++ y Score-CAM** añadidos junto al Grad-CAM original sobre M4 —
+  confirman el patrón "constante" con dos métodos más (correlación ≥ 0.9998
+  en los tres), reforzando que la causa es estructural de EfficientNetB0.
+- ✅ Múltiples semillas (3) con **IC 95% por bootstrap y pruebas de McNemar**,
+  en vez de un único split — exactamente lo que pedía este punto.
+- ✅ Investigado por qué el aumento de datos sigue colapsando: persiste con
+  partición por grupos y parada temprana por F1 macro (no solo con
+  `val_loss`), tanto para augmentation geométrico como para CutMix.
+
+**Pendiente:**
+
 - Probar **segmentación pulmonar aprendida** (una U-Net entrenada sobre
-  máscaras anotadas, en vez del enfoque clásico Otsu + morfología de
-  `02b_segmentation.py`) — la segmentación clásica no mejoró el modelo
-  ni la explicabilidad (ver [Hallazgo #8](#hallazgos-y-análisis)), pero
-  no descarta que una segmentación más precisa sí pudiera ayudar; el
-  experimento actual solo prueba el enfoque clásico, no la segmentación
-  en general.
-- Investigar el patrón de Grad-CAM "constante" (correlación 0.999 entre
-  imágenes distintas) tanto en el modelo original como en el segmentado
-  con otras técnicas de explicabilidad (Grad-CAM++, Score-CAM, o
-  analizar directamente las activaciones de la última capa convolucional
-  de EfficientNetB0 para entender si el problema es realmente estructural
-  de esa arquitectura preentrenada, como se hipotetiza en el
-  [Hallazgo #6](#hallazgos-y-análisis)).
-- Reconstruir un split a **nivel de paciente** (requiere acceso a los
-  metadatos DICOM originales del NCCD/IOSH, no solo a las imágenes
-  exportadas), y volver a medir todas las métricas — se espera una caída
-  sustancial de exactitud, especialmente en la línea base SVM.
-- Investigar específicamente **por qué el aumento de datos en tiempo real
-  sigue causando colapso en la CNN**, ya sea con augmentation geométrico
-  o con CutMix, aunque la misma arquitectura sin ningún aumento (CNN
-  Base) no colapsa con los mismos hiperparámetros (ver Hallazgos #3 y
-  #9) — por ejemplo, probar con augmentation/CutMix más suave (`alpha`
-  más bajo), aplicado solo a partir de cierta época (*curriculum*) en
-  vez de desde el principio, o cambiando `EarlyStopping` para vigilar
-  `val_accuracy` en vez de `val_loss` (el Hallazgo #9 muestra un pico de
-  73.3% de exactitud de validación en la época 9 de CutMix que se
-  descarta precisamente porque el monitor es `val_loss`).
-- Probar **umbrales de decisión por clase** en vez de `argmax` puro para
-  la CNN + Augmentation y la CNN + CutMix: sus AUC-ROC (0.723 y 0.718)
-  sugieren que ambos modelos sí aprenden información útil aunque la
-  decisión final colapse, lo que podría indicar que el problema está más
-  en el umbral que en el modelo en sí.
+  máscaras anotadas, en vez del enfoque clásico Otsu + morfología) — en el
+  protocolo corregido la segmentación clásica (M5) sí dio el mejor resultado
+  entre los modelos profundos, a diferencia de la ronda preliminar; queda
+  abierto si una segmentación aprendida mejoraría aún más.
+- Analizar directamente las activaciones de la última capa convolucional de
+  EfficientNetB0 (más allá de Grad-CAM/++/Score-CAM) para entender la causa
+  estructural exacta del patrón "constante".
+- Probar **umbrales de decisión por clase** en vez de `argmax` puro para los
+  modelos que colapsan (M1, M2, M3): sus AUC-ROC no son triviales (0.59-0.78)
+  pese a la decisión final colapsada, lo que podría indicar que el problema
+  está más en el umbral que en el modelo en sí.
 - Configurar soporte de GPU real para este proyecto (WSL2, o el plugin
-  DirectML de Microsoft para Windows) — permitiría iterar mucho más rápido
-  sobre estas hipótesis; en esta ronda se intentó pero la instalación de
-  TensorFlow del equipo no tenía soporte nativo de GPU en Windows (ver
-  [Instalación](#instalación)), así que todo el reentrenamiento se hizo en
-  CPU.
-- Validación cruzada (k-fold) en lugar de un único split, dado el tamaño
-  reducido del dataset — la tercera ronda de entrenamiento (Hallazgo #7)
-  ya mostró evidencia directa de esta necesidad: Transfer Learning bajó
-  de exactitud en test pese a mejores métricas de validación, señal de
-  que un único split de 165+165 imágenes no es suficientemente estable
-  para conclusiones robustas sobre "cuál modelo es mejor".
+  DirectML de Microsoft para Windows) — permitiría iterar mucho más rápido;
+  todo el reentrenamiento de ambas rondas se hizo en CPU (ver
+  [Instalación](#instalación)).
 - Evaluar en un conjunto externo (otro hospital/dataset público de TC de
   tórax) para medir generalización real.
+- Repetir la búsqueda de hiperparámetros (Tarea 3 del protocolo corregido)
+  con más semillas (actualmente solo semilla 0) si el tiempo de cómputo lo
+  permite, para que la elección de configuración final sea también robusta
+  a la semilla, no solo el entrenamiento final.
 - Explorar arquitecturas 3D que aprovechen la información volumétrica de
   cortes consecutivos, en lugar de clasificar cortes 2D de forma
   independiente.

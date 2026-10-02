@@ -16,13 +16,32 @@ No es el README técnico (ese explica cómo instalar y ejecutar el
 código). Este archivo explica QUÉ se hizo, QUÉ se encontró, y QUÉ
 significa, con el detalle necesario para escribir el documento.
 
+>>> CORRECCIÓN METODOLÓGICA (octubre 2026) — LEER ESTO PRIMERO.
+    La tutora revisó el TFM y pidió corregir la partición train/val/test
+    (se hacía por imagen, permitiendo fuga de datos entre cortes casi
+    idénticos del mismo paciente) y otros 7 problemas metodológicos. Se
+    implementó un protocolo nuevo completo — ver FASE 11 en la sección 3
+    (cronología), sección 4.9 (tabla final) y, sobre todo,
+    outputs/experimentos/RESUMEN_PARA_DOCUMENTO.md (resumen consolidado
+    con TODAS las tablas finales, listo para citar) y
+    outputs/experimentos/registro.md (bitácora completa, tarea por tarea).
+    LOS RESULTADOS DE ESE PROTOCOLO SON LOS QUE CUENTAN PARA EL TFM. Las
+    secciones 4.1-4.8 y gran parte de la sección 9 de este archivo narran
+    la ronda PRELIMINAR (partición por imagen) — se conservan íntegras
+    porque el documento las cita como antecedente metodológico (el propio
+    colapso de entrenamiento y su diagnóstico son parte de la narrativa),
+    pero sus cifras de exactitud/F1/AUC NO deben presentarse como el
+    resultado final sin la advertencia de fuga de datos.
+
 >>> PARA EMPEZAR A ESCRIBIR EL TFM DIRECTAMENTE: ir a la SECCIÓN 9
     ("Guion redactado, listo para adaptar al documento del TFM"), al
     final de este archivo. Está en el registro formal de una memoria
     de máster (introducción, objetivos con su cumplimiento, desarrollo,
     resultados, explicación de cada figura, discusión y conclusiones),
     lista para copiar y adaptar. Las secciones 1-8 son el material de
-    referencia y el registro cronológico detrás de esos párrafos.
+    referencia y el registro cronológico detrás de esos párrafos. La
+    sección 9.4 (Resultados) tiene un aviso señalando qué tabla es la
+    vigente (protocolo corregido) y cuál es la preliminar.
 
 
 ====================================================================
@@ -830,6 +849,167 @@ solo pruebas manuales. La instalación es un único
 proyecto está subido a GitHub: https://github.com/CesarEspa/Maestria
 
 
+FASE 11 — Corrección metodológica completa de la tutora (partición por
+grupos de paciente, 7 tareas, octubre 2026)
+
+La tutora revisó el TFM y pidió corregir 8 problemas metodológicos
+(ver PROMPT_CORRECCIONES_TUTORA.md para las instrucciones completas).
+El más importante: la partición train/val/test se hacía A NIVEL DE
+IMAGEN, permitiendo que cortes casi idénticos del mismo paciente
+quedaran repartidos entre entrenamiento y prueba — con esa partición,
+89-95% de las imágenes de prueba tenían un "gemelo" casi idéntico en
+entrenamiento. El protocolo nuevo se ejecutó en 7 tareas secuenciales,
+cada una commiteada y pusheada por separado:
+
+TAREA 1 — Grupos de paciente (src/02c_grupos_paciente.py, script
+entregado por la tutora): reconstruye 83 grupos de paciente (15
+Benigno, 30 Maligno, 38 Normal) a partir de la correlación entre cada
+corte y el siguiente (ordenados por número de archivo), cortando en
+los K-1 enlaces más débiles. Particiones por grupos (nuevas) e imagen
+(referencia) generadas para 5 semillas. Verificado: coincide
+exactamente con las cifras esperadas por la tutora (grupos totales,
+correlación consecutiva mediana 0.97/0.99/0.99, gemelos >0.95 en
+prueba: 89-95% por imagen vs 0-2.5% por grupos). Montaje visual
+revisado fila por fila sin incidencias.
+
+TAREA 2 — Infraestructura común (src/protocolo.py): carga de imágenes
+con caché, segmentación cacheada, control de calidad de máscaras
+(6.2% sospechosas, revisión visual sin incidencias), aumento de datos
+UNIFICADO entre CNN y EfficientNet (antes la transferencia usaba
+0.1/0.1 de rotación/zoom mientras la CNN usaba 0.08/0.05 — un segundo
+factor que cambiaba a la vez entre escenarios, ya corregido), parada
+temprana por F1 macro de validación (código dado literalmente por la
+tutora), constructores de arquitectura parametrizados, y entrenar()
+reanudable con registro en outputs/experimentos/runs/. Se movieron
+TODOS los modelos/figuras/JSON del protocolo anterior a
+outputs/legacy_particion_imagen/ (git mv, nada se borró).
+
+Benchmark de tiempo: con los tiempos medidos (CNN 91.8 s/época,
+EfficientNet fase 1 27.1 s/época en un benchmark de 2 épocas sin
+parada), la estimación total para las Tareas 3+4 con 3 semillas
+(~18.6h) ya superaba el umbral de ~14h del prompt, así que se usaron
+3 semillas (0,1,2) en vez de 5, tal como preveía la propia instrucción
+para este caso. En la práctica, los tiempos reales fueron MUCHO
+menores (ver Tarea 3).
+
+TAREA 3 — Búsqueda de hiperparámetros (src/08b_busqueda_hiperparametros.py,
+solo semilla 0, partición por grupos): M1 (rejilla lr×dropout, 4
+entrenamientos) -> M2 (geométrico, hp de M1) / M3 (CutMix, hp de M1) ->
+M4 (rejilla EfficientNet lr_ajuste×capas, con el mejor aumento de
+M2/M3) -> M5 (igual que M4, sobre segmentada). 11 entrenamientos en
+total. Tiempos REALES muy por debajo de lo estimado: CNN ~38 min
+promedio (no ~53.5 min), EfficientNet 17-24 min (no ~49 min, gracias a
+que EarlyStopping por F1 macro corta mucho antes). Duración total
+real: ~6h20min (no las ~9.4h estimadas).
+
+HALLAZGO: las 4 configuraciones de M1 dan EXACTAMENTE la misma F1
+macro/sensibilidad (sens_benigno=0.00 en las 4), y M3 (CutMix)
+reproduce esos mismos números de forma idéntica — el patrón de colapso
+de la Fase 10 anterior persiste con partición por grupos y parada por
+F1 macro, no solo con val_loss ni por fuga de datos. HALLAZGO
+POSITIVO: M5 (EfficientNet+segmentación) da el MEJOR resultado de toda
+la búsqueda (F1 macro 0.607, sens.Maligno 0.74) — al contrario que en
+la Fase 10 anterior, donde la segmentación no ayudaba.
+
+TAREA 4 — Entrenamiento final multisemilla (src/08c_entrenamiento_final.py):
+M1-M5 en las 3 semillas (semilla 0 reutilizada de la Tarea 3, sin
+reentrenar — confirmado "[saltado, ya existe]") + SVM+HOG en 3 semillas
+x 2 particiones (grupos e imagen, para cuantificar la inflación).
+seleccion_modelo_recomendado.json escrito ANTES de calcular ninguna
+métrica de test, con el criterio fijado de antemano por la tutora
+(mayor sensibilidad media en Maligno, validación; desempate <0.02 por
+F1 macro medio).
+
+HALLAZGO CRÍTICO: el criterio pre-registrado eligió M3 como "modelo
+recomendado" (sens_maligno medio 0.78) — pero sus cifras por semilla
+(sens_maligno=[0.34,1.00,1.00], f1_macro=[0.38,0.23,0.23]) muestran que
+colapsó a predecir siempre "Maligno" en 2 de 3 semillas. NO se alteró
+el criterio ni el resultado tras detectarlo — el principio del
+protocolo es fijar el criterio antes de ver resultados, y eso se
+respetó incluso cuando el resultado es incómodo. Se documenta como una
+lección metodológica real: un criterio de sensibilidad "pura" es
+frágil ante el colapso trivial de un modelo a una sola clase.
+
+TAREA 5 — Evaluación en prueba y estadística (src/09_evaluacion_final.py):
+predicción sobre test UNA SOLA VEZ por modelo/semilla, métricas
+completas, resumen con IC95% por bootstrap (2000 remuestreos), McNemar
+exacto con corrección de Holm, tabla de errores clínicos
+maligno->normal/benigno, 4 figuras. Completada en menos de 10 minutos.
+
+RESULTADOS (test agregado, 3 semillas): SVM_grupos es el MEJOR modelo
+de los 7 (exactitud 0.857, F1 macro 0.675, AUC 0.881) — con partición
+correcta, deja de ser la señal de alarma que era antes y pasa a ser un
+contendiente legítimo. Entre los modelos profundos, M5 es el mejor
+(F1 macro 0.568, sens.Maligno 0.762). M3 confirma en test el colapso:
+sens_benigno=0.000±0.000 (nunca predice Benigno en ninguna semilla).
+McNemar: M3 vs M4/M5/SVM_grupos significativo (p<0.001 agregado), M3
+vs M1/M2 NO significativo (también colapsan, de otras formas).
+SVM_imagen (con fuga) da exactitud 0.998 vs 0.857 de SVM_grupos — la
+pieza de evidencia más directa de todo el protocolo sobre el efecto de
+la fuga de datos.
+
+TAREA 6 — Explicabilidad (src/10_explicabilidad.py + gradcam_utils.py
+ampliado con Grad-CAM++ y Score-CAM): Grad-CAM sobre M1 y M3
+(recomendado); Grad-CAM++ y Score-CAM añadidos sobre M4. Bug real
+encontrado (calcular_correlacion no definida, nombre y firma
+inconsistentes) y corregido en minutos gracias a lanzar con `python -u`
+para ver el progreso en tiempo real en vez de depender del buffering
+por bloques de los print() sin TTY (lección aplicada también a la
+Tarea 7).
+
+HALLAZGO: los tres métodos dan correlación entre clases ≥0.9998 sobre
+M4 — el patrón "mapa constante" de la Fase 10 anterior se confirma con
+tres métodos de mecanismo de cálculo muy distinto (gradientes de orden
+superior vs. sin gradientes), reforzando que la causa es estructural
+de EfficientNetB0, no un artefacto de un método en particular.
+Grad-CAM reproduce el degradado ya documentado; Grad-CAM++ y Score-CAM
+muestran un punto caliente fijo en la esquina INFERIOR derecha (la
+métrica fraccion_esquina mide la esquina SUPERIOR izquierda, así que
+da ≈0 para esos casos aunque el artefacto de esquina sí existe, solo
+que en la esquina opuesta — documentado explícitamente para no leer
+mal esa cifra). HALLAZGO ADICIONAL, GRAVE: 0% de 42 mapas evaluados
+cae mayormente dentro del tejido pulmonar real — ninguno de los tres
+métodos, en ninguno de los dos modelos, sería fiable como apoyo visual
+para un radiólogo en su estado actual.
+
+TAREA 7 — Tablas descriptivas, pipeline y entorno (src/11_tablas_y_entorno.py):
+imagenes_por_subconjunto.csv (conteos por clase/semilla/partición +
+muestras vistas en entrenamiento para M1/M2/M3), figura
+pipeline_preprocesamiento.png (original->redimensionada->máscara->
+segmentada->aumento geométrico->CutMix, un ejemplo por clase),
+entorno.json (Windows 10, AMD64, 6 núcleos físicos/12 lógicos, 15.2GB
+RAM, sin GPU utilizable, versiones de todas las librerías). Sin
+incidencias, completada en menos de 1 minuto.
+
+INCIDENCIAS TÉCNICAS DE ESTA FASE (ver outputs/experimentos/registro.md
+para el detalle completo):
+  - Límite de tiempo en segundo plano del entorno de ejecución (~30
+    min): el primer intento de la Tarea 3 se perdió POR COMPLETO
+    (ningún entrenamiento sobrevivió — un error de verificación inicial
+    hizo pensar que 1 había sobrevivido, pero el directorio estaba
+    vacío). Corregido lanzando los procesos desacoplados por completo
+    (`nohup ... > log 2>&1 < /dev/null & disown`), verificado que
+    sobreviven indefinidamente.
+  - Suspensión del sistema operativo durante la noche (dos veces,
+    durante la Tarea 4): pausó el avance real varias horas (un run
+    tardó 360 min en vez de ~30). El proceso no murió, solo se alargó
+    el reloj de pared. Recomendado al usuario desactivar la suspensión
+    automática mientras corran procesos largos.
+  - Bug real en 10_explicabilidad.py (Tarea 6, ver arriba).
+
+ESTADO ACTUAL (tras la FASE 11): las 7 tareas de la corrección
+metodológica están completas, commiteadas y pusheadas (una por tarea).
+El protocolo corregido (partición por grupos) es el que cuenta para
+las conclusiones del TFM — ver outputs/experimentos/RESUMEN_PARA_DOCUMENTO.md
+para el resumen consolidado con todas las tablas finales, listo para
+citar en el documento, y outputs/experimentos/registro.md para la
+bitácora completa tarea por tarea. El protocolo anterior (secciones
+4.1-4.8 de este archivo) se conserva como antecedente metodológico,
+con sus modelos y figuras movidos a outputs/legacy_particion_imagen/.
+README.md y PROYECTO_CLAUDE_CONTEXTO.txt actualizados para dejar claro
+cuál conjunto de resultados es el vigente.
+
+
 ====================================================================
 4. LOS 4 MODELOS: ARQUITECTURA Y RESULTADOS DETALLADOS
 ====================================================================
@@ -1152,6 +1332,59 @@ CutMix — en outputs/figures/ salvo donde se indica):
     outputs/gradcam/gradcam_grid_segmentado.png
   - muestras_cutmix.png, curvas_cnn_cutmix.png,
     confusion_matrix_cnn_cutmix.png, classification_report_cnn_cutmix.png
+
+(Nota: desde la Fase 11, estos modelos y figuras de 4.1-4.8 viven en
+outputs/legacy_particion_imagen/ — ver sección 4.9 para los resultados
+vigentes del protocolo corregido.)
+
+--------------------------------------------------------------------
+4.9 PROTOCOLO CORREGIDO (Fase 11) — Tabla final, M1-M5 + SVM, test agregado 3 semillas
+--------------------------------------------------------------------
+Esta es la tabla que CUENTA para las conclusiones del TFM (partición
+por grupos de paciente, sin fuga). Fuente completa:
+outputs/experimentos/RESUMEN_PARA_DOCUMENTO.md.
+
+Modelo                    Exactitud  F1 Macro  AUC macro  Sens.Maligno  Sens.Benigno
+M1 (CNN sin aumento)         0.502     0.346     0.779      0.426          0.241
+M2 (CNN+geométrico)           0.447     0.258     0.586      0.333          0.208
+M3 (CNN+CutMix, RECOMENDADO*) 0.468     0.212     0.614      0.667          0.000  <- colapsa, ver nota
+M4 (EfficientNetB0)             0.665     0.558     0.813      0.591          0.236
+M5 (EfficientNetB0+segment.)      0.684     0.568     0.827      0.762          0.312  <- mejor de los profundos
+SVM_grupos (sin fuga)               0.857     0.675     0.881      0.941          0.208  <- MEJOR de los 7
+SVM_imagen (CON fuga, referencia)      0.998     0.996     1.000      1.000          0.981
+
+Sensibilidad y especificidad completas por clase:
+Modelo           Sens.Ben  Sens.Mal  Sens.Nor  Esp.Ben  Esp.Mal  Esp.Nor
+M1                  0.241    0.426    0.667    0.729    0.982    0.594
+M2                   0.208    0.333    0.667    0.955    0.794    0.333
+M3                    0.000    0.667    0.333    1.000    0.333    0.667
+M4                     0.236    0.591    0.882    0.842    1.000    0.685
+M5                      0.312    0.762    0.687    0.854    0.891    0.786
+SVM_grupos                0.208    0.941    0.921    0.973    0.987    0.817
+SVM_imagen                   0.981    1.000    1.000    1.000    1.000    0.997
+
+*M3 fue elegido "modelo recomendado" por el criterio fijado de antemano
+(mayor sens.Maligno medio en VALIDACIÓN) pero sus cifras por semilla
+revelan que colapsa a predecir "Maligno" siempre en 2 de 3 semillas —
+ver FASE 11 arriba y RESUMEN_PARA_DOCUMENTO.md sección 2 para el
+análisis completo de esta paradoja metodológica. Si el criterio fuera
+desempeño agregado de test, el mejor sería SVM_grupos (general) o M5
+(entre los modelos profundos).
+
+McNemar (M3 vs. resto, agregado 3 semillas, corrección de Holm):
+significativo contra M4 (p=2.7e-10), M5 (p=1.1e-10) y SVM_grupos
+(p=1.3e-45); NO significativo contra M1 (p=0.376) ni M2 (p=0.460) —
+también colapsan, de otras formas.
+
+Errores clínicos (maligno mal clasificado, suma 3 semillas, de 239
+casos): M2 es el peor (159 -> Normal); M3 también comete 80 -> Normal
+(su colapso en semilla 0); M4 y M5 reducen bastante (53 y 37); SVM_grupos
+el mejor entre los creíbles (14); SVM_imagen 0 (por la fuga, no mérito).
+
+Explicabilidad (Grad-CAM/Grad-CAM++/Score-CAM sobre M4, outputs/gradcam/):
+correlación entre clases 0.9998/1.0000/0.99999 — confirma con 3 métodos
+independientes el patrón "mapa constante" ya visto en la Fase 10. 0% de
+42 mapas cae mayormente dentro del tejido pulmonar real.
 
 
 ====================================================================
@@ -1713,6 +1946,18 @@ científica del TFM en sí.
 --------------------------------------------------------------------
 9.4 Resultados
 --------------------------------------------------------------------
+>>> AVISO: la tabla de esta subsección (9.4, debajo) es de la RONDA
+    PRELIMINAR (partición por imagen, con fuga de datos). Sigue siendo
+    útil para narrar el proceso (el colapso, su diagnóstico, las 3
+    rondas de ajuste), pero las cifras concretas NO deben presentarse
+    como el resultado final del TFM sin la advertencia de fuga. LA
+    TABLA VIGENTE es la de la sección 4.9 (protocolo corregido, 7
+    modelos, partición por grupos de paciente), reproducida íntegra en
+    outputs/experimentos/RESUMEN_PARA_DOCUMENTO.md — es la que debe
+    citarse en el capítulo de Resultados del documento final. Ver
+    también FASE 11 (sección 3) para la narrativa completa de la
+    corrección.
+
 La tabla siguiente resume los resultados FINALES de los seis modelos
 sobre el conjunto de prueba (165 imágenes: 18 Benigno, 84 Maligno, 63
 Normal — el modelo segmentado se evalúa sobre la versión segmentada de
@@ -2035,6 +2280,11 @@ EXPLICABILIDAD (generada por 07_gradcam.py)
 --------------------------------------------------------------------
 9.6 Discusión
 --------------------------------------------------------------------
+>>> AVISO: discusión de la ronda preliminar. Sigue siendo válida como
+    narrativa del proceso de diagnóstico, pero debe leerse junto con el
+    Punto 7 (FASE 11, protocolo corregido) para la versión actualizada
+    y definitiva — ver 9.7-bis más abajo.
+
 Tomados en conjunto, los resultados de este TFM sostienen tres ideas
 centrales. La primera es que el diagnóstico y la corrección
 sistemática de un problema de entrenamiento —el colapso observado en
@@ -2166,3 +2416,69 @@ potencial como los límites concretos de aplicar CNNs y transfer
 learning a un problema de imagen médica con recursos de datos
 limitados — que es, en última instancia, la situación realista a la
 que se enfrenta gran parte de la investigación aplicada en este campo.
+
+--------------------------------------------------------------------
+9.7-bis Conclusiones ACTUALIZADAS (protocolo corregido, Fase 11) — versión definitiva
+--------------------------------------------------------------------
+Esta subsección reemplaza a 9.7 para el documento final. Se mantiene
+9.7 porque la corrección que relata (el colapso de entrenamiento y su
+diagnóstico en tres rondas) sigue siendo parte legítima de la
+narrativa metodológica del TFM — pero las cifras y la conclusión sobre
+"cuál es el mejor modelo" deben tomarse de aquí.
+
+La corrección metodológica pedida por la tutora —reconstruir la
+partición train/val/test a nivel de GRUPO de paciente en vez de
+imagen, y corregir otros 7 problemas— cambia sustancialmente el
+panorama. Con partición correcta: (1) la línea base SVM+HOG, lejos de
+ser la señal de alarma que era antes, se convierte en el modelo con
+mejor desempeño agregado de los 7 evaluados (exactitud 0.857, F1 macro
+0.675, AUC 0.881) — comparada directamente contra la misma SVM+HOG
+entrenada con la partición antigua (exactitud 0.998), la diferencia es
+la demostración más directa de todo el proyecto sobre el efecto
+cuantitativo de la fuga de datos; (2) entre los modelos profundos,
+EfficientNetB0 sobre imágenes segmentadas (M5) es el mejor, con
+sensibilidad Maligno de 0.762 y sin señales de colapso; (3) el colapso
+de las CNN entrenadas desde cero con aumento de datos —ya fuera
+geométrico o CutMix— PERSISTE incluso con partición por grupos y
+parada temprana por F1 macro (no solo con `val_loss` como se pensaba
+originalmente), lo que descarta esas dos hipótesis como causa única y
+apunta a una interacción más profunda entre el tamaño del dataset, el
+desbalance de clases, y cualquier arquitectura entrenada desde cero
+bajo este régimen de entrenamiento.
+
+Un hallazgo metodológico adicional, poco común de documentar con esta
+franqueza: el criterio de selección de "modelo recomendado", fijado
+explícitamente ANTES de ver el conjunto de prueba (tal como exige la
+buena práctica que motivó toda esta corrección), eligió un modelo —CNN
+con CutMix— cuyas cifras detalladas por semilla revelan que había
+colapsado a predecir una sola clase en dos de las tres semillas. Lejos
+de ocultar o corregir retroactivamente esta paradoja, se documenta
+como lo que es: evidencia de que un criterio de sensibilidad sin
+ningún control de especificidad o balance entre clases puede, en la
+práctica, premiar al modelo más degenerado en vez de al mejor. Es una
+lección metodológica que vale la pena incluir explícitamente en la
+discusión del TFM, no solo en el apéndice técnico.
+
+Sobre explicabilidad: añadir Grad-CAM++ y Score-CAM junto al Grad-CAM
+original permitió confirmar, con tres métodos de mecanismo de cálculo
+muy distinto, que el patrón de mapa de calor "constante" (insensible
+al contenido real de la imagen) no es un artefacto de una técnica en
+particular, sino muy probablemente una propiedad estructural de cómo
+EfficientNetB0 integra información espacial en su última capa
+convolucional. Más grave aún: ninguno de los mapas evaluados (0 de 42)
+concentra mayormente su energía dentro del tejido pulmonar real — una
+limitación de explicabilidad que, en el estado actual del sistema,
+impide por completo su uso como apoyo visual fiable para un
+radiólogo, independientemente del método de explicabilidad elegido.
+
+La conclusión general se mantiene y se refuerza: el sistema es un
+PROTOTIPO ACADÉMICO que cumple su propósito de explorar, con rigor
+metodológico creciente a lo largo de dos rondas de corrección, el
+potencial y los límites de CNNs, transfer learning y una línea base
+clásica bien implementada sobre un dataset público reducido de TC de
+tórax. La corrección de la partición por paciente —el problema
+metodológico más grave identificado en todo el proyecto— no solo se
+implementó, sino que permitió cuantificar exactamente su efecto
+(SVM_grupos vs. SVM_imagen) en vez de solo señalarlo como una
+limitación teórica. Ese es, en sí mismo, uno de los aportes
+metodológicos más sólidos del trabajo.
