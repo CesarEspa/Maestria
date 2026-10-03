@@ -711,3 +711,31 @@ Archivos regenerados: `metricas_por_semilla.csv`, `resumen_ic95.csv`, `mcnemar.c
 Continuando sin pausa: Grad-CAM de M1 y de M5 (modelo recomendado).
 
 ---
+
+## Resultado: Grad-CAM rehecho para M1 y M5 (Tarea 6 parcial)
+
+`08f_rehacer_gradcam_tras_correccion.py` ejecutado: regenera Grad-CAM de M1 (nuevo,
+tras la corrección de schedule) y del modelo recomendado actual (M5), descartando
+del `explicabilidad.csv` las filas del modelo recomendado anterior (M3, bajo el
+criterio v1). Grad-CAM++/Score-CAM de M4 **no se tocaron** (M4 no cambió).
+
+`explicabilidad.csv` final: M4 =30 filas (gradcam/gradcam++/scorecam, sin cambios),
+M1 =9 filas nuevas (gradcam, 4 aciertos + 5 errores), M5 =12 filas nuevas (gradcam,
+6 aciertos + 6 errores). Correlación entre clases: M1=0.111 (los mapas de calor
+cambian apreciablemente según la clase predicha), M5=1.000 (prácticamente idéntica
+entre clases) — este último valor es consistente con el ya documentado para M4 en
+Grad-CAM++/Score-CAM (también ≈1.0), y con el hallazgo general de la Tarea 6 (ver
+`RESUMEN_PARA_DOCUMENTO.md` anterior) de que las redes EfficientNet (M4/M5) atienden
+a regiones muy similares sin importar la clase, a diferencia de la CNN propia (M1),
+cuyos mapas sí varían entre clases. Ninguna de las 12 filas de M5 alcanza
+`fraccion_torax >= 0.5` (0 de 51 filas totales en el CSV combinado) — consistente
+con el patrón ya observado en M4, no es un hallazgo nuevo de esta corrección.
+
+Figuras: `gradcam_M1.png` (regenerada), `gradcam_recomendado.png` (ahora apunta a
+M5, antes a M3).
+
+Con esto termina la ejecución automática de los 7 pasos de la corrección (schedule
+CNN v2, criterio de Youden, Tarea 5, Grad-CAM parcial). Sigue: actualizar
+`RESUMEN_PARA_DOCUMENTO.md` con los resultados finales de esta corrección.
+
+---
