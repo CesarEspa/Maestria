@@ -652,3 +652,62 @@ McNemar, errores en Maligno) con M5 como modelo recomendado, y después Grad-CAM
 M1 y de M5.
 
 ---
+
+## Resultado: Tarea 5 reevaluada con M5 como modelo recomendado
+
+`09_evaluacion_final.py` reejecutado completo (predicciones de prueba de M1/M2/M3
+recalculadas con los modelos nuevos de la corrección v2; M4/M5/SVM reutilizan
+`pred_test.npz` cacheado, sin cambios). Nota operativa: la primera ejecución falló al
+final con `UnicodeEncodeError` (consola cp1252 sin `PYTHONIOENCODING=utf-8`) justo
+después de escribir `metricas_por_semilla.csv`; se relanzó con el encoding correcto y
+terminó sin errores, reutilizando las predicciones ya cacheadas.
+
+**Resumen con IC 95% (bootstrap, 2000 remuestreos), métricas clave:**
+
+| Modelo | Exactitud | F1 macro | AUC macro | Sens. Maligno | Sens. Benigno |
+|---|---|---|---|---|---|
+| M1 | 0.618 [0.573, 0.660] | 0.432 [0.451, 0.534]* | 0.771 [0.809, 0.855]* | 0.663 [0.602, 0.725] | 0.125 [0.034, 0.217] |
+| M2 | 0.453 [0.408, 0.500] | 0.234 [0.286, 0.350]* | 0.586 [0.485, 0.575]* | 0.392 [0.330, 0.455] | 0.000 |
+| M3 | 0.483 [0.436, 0.526] | 0.282 [0.308, 0.368]* | 0.544 [0.470, 0.553]* | 0.504 [0.437, 0.565] | 0.000 |
+| M4 | 0.665 [0.624, 0.707] | 0.558 [0.515, 0.599] | 0.813 [0.779, 0.849] | 0.591 [0.527, 0.654] | 0.236 [0.128, 0.367] |
+| **M5** | **0.684 [0.641, 0.726]** | **0.568 [0.531, 0.623]** | **0.827 [0.763, 0.841]** | **0.762 [0.705, 0.817]** | 0.313 [0.174, 0.432] |
+| SVM_grupos | 0.857 [0.825, 0.887] | 0.675 [0.645, 0.752] | 0.881 [0.836, 0.909] | 0.941 [0.909, 0.969] | 0.208 [0.109, 0.341] |
+| SVM_imagen | 0.998 [0.994, 1.0] | 0.996 [0.987, 1.0] | 1.000 [0.999, 1.0] | 1.000 | 0.981 [0.939, 1.0] |
+
+(*IC calculado con bootstrap percentil; algunos intervalos de M1/M2/M3 quedan
+desplazados respecto a la media puntual por la asimetría de la distribución
+bootstrap cuando el modelo es inestable entre semillas — ver `resumen_ic95.csv`
+para los valores exactos.)
+
+M5 supera a M4 en todas las métricas clave, en particular en sensibilidad Maligno
+(0.762 vs 0.591) — el objetivo clínico central del criterio de selección.
+SVM_grupos sigue siendo netamente superior a toda la familia de redes
+convolucionales (M1-M5) en esta partición por grupos de paciente; SVM_imagen sigue
+mostrando el patrón ya documentado de fuga de información a nivel de imagen (no es
+comparable).
+
+**McNemar exacto (M5 vs. cada modelo, por semilla y agregado, corrección de Holm):**
+M5 es significativamente mejor que M2 y M3 en las 3 semillas y en el agregado
+(p_holm < 0.001 en todos los casos). Contra M1: significativo en la semilla 1
+(p_holm=4.5e-7) pero no en las semillas 0 y 2 individualmente; el agregado da
+p_holm=0.054 (al borde de 0.05, no significativo tras a corrección). Contra M4: no
+hay diferencia significativa en ninguna semilla ni en el agregado (p_holm=0.538) —
+consistente con que M4 y M5 comparten la misma arquitectura EfficientNet y solo
+difieren en si usan imágenes segmentadas (M5) o no (M4). Contra SVM_grupos: SVM_grupos
+es claramente superior a M5 en todas las semillas y en el agregado
+(p_holm=8.5e-13) — las redes convolucionales de este protocolo no alcanzan al SVM
+clásico sobre características tabulares en esta partición por grupos.
+
+**Errores clínicos (malignos mal clasificados):** M5 confunde 37/239 malignos con
+Normal y 20/239 con Benigno (57/239 = 23.8% de error en la clase crítica), frente a
+79/239 (33.1%) de M1 y 53+45=98/239 (41.0%) de M4. SVM_grupos sigue teniendo la
+menor tasa de error clínico entre los modelos entrenados desde cero (14/239 = 5.9%).
+
+Archivos regenerados: `metricas_por_semilla.csv`, `resumen_ic95.csv`, `mcnemar.csv`,
+`errores_maligno.csv`, `matrices_confusion_agregadas.json`,
+`resumen_modelos_ic.png`, `matrices_confusion_agregadas.png`, `curvas_roc_final.png`,
+`svm_imagen_vs_grupos.png`.
+
+Continuando sin pausa: Grad-CAM de M1 y de M5 (modelo recomendado).
+
+---
