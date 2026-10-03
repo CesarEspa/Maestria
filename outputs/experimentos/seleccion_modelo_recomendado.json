@@ -1,36 +1,56 @@
 {
-  "fecha_hora": "2026-10-02T10:16:28",
-  "criterio": "Mayor sensibilidad media sobre la clase Maligno en VALIDACIÓN (media de 3 semillas), entre M1-M5. Desempate (<0.02 de diferencia): mayor F1 macro medio de validación. Fijado antes de calcular cualquier métrica sobre el conjunto de prueba.",
-  "modelo_recomendado": "M3",
+  "fecha_hora": "2026-10-03T07:57:37",
+  "criterio": "Mayor ÍNDICE DE YOUDEN de la clase Maligno en VALIDACIÓN (sensibilidad Maligno + especificidad Maligno - 1), media de 3 semillas, entre M1-M5. Desempate (<0.02 de diferencia): mayor F1 macro medio de validación. Un clasificador constante tiene Youden=0. Sustituye al criterio v1 (solo sensibilidad Maligno), que un modelo colapsado a predecir siempre Maligno maximizaba trivialmente — ver incidencia 'schedule de la tasa de aprendizaje y criterio de selección' en registro.md.",
+  "modelo_recomendado": "M5",
   "cifras_validacion": {
     "M1": {
       "sens_maligno_por_semilla": [
+        0.8536585365853658,
         0.34146341463414637,
-        0.34146341463414637,
-        0.9876543209876543
+        1.0
       ],
-      "sens_maligno_medio": 0.5568603834186491,
+      "esp_maligno_por_semilla": [
+        0.8266666666666667,
+        1.0,
+        0.6447368421052632
+      ],
+      "youden_maligno_por_semilla": [
+        0.6803252032520324,
+        0.3414634146341464,
+        0.6447368421052633
+      ],
+      "youden_maligno_medio": 0.555508486663814,
       "f1_macro_por_semilla": [
+        0.585471738663228,
         0.378916827852998,
-        0.38356467225669927,
-        0.5332457005148429
+        0.5741858558759967
       ],
-      "f1_macro_medio": 0.4319090668748467,
+      "f1_macro_medio": 0.5128581407974075,
       "segmentado": false
     },
     "M2": {
       "sens_maligno_por_semilla": [
-        0.4268292682926829,
+        0.34146341463414637,
         0.0,
         1.0
       ],
-      "sens_maligno_medio": 0.47560975609756095,
-      "f1_macro_por_semilla": [
-        0.4167414333160189,
-        0.18209876543209877,
-        0.26274757690686895
+      "esp_maligno_por_semilla": [
+        0.9066666666666666,
+        1.0,
+        0.0
       ],
-      "f1_macro_medio": 0.2871959252183289,
+      "youden_maligno_por_semilla": [
+        0.24813008130081293,
+        0.0,
+        0.0
+      ],
+      "youden_maligno_medio": 0.08271002710027098,
+      "f1_macro_por_semilla": [
+        0.35107270466386487,
+        0.18209876543209877,
+        0.226890756302521
+      ],
+      "f1_macro_medio": 0.25335407546616157,
       "segmentado": false
     },
     "M3": {
@@ -39,13 +59,23 @@
         1.0,
         1.0
       ],
-      "sens_maligno_medio": 0.7804878048780489,
-      "f1_macro_por_semilla": [
-        0.378916827852998,
-        0.2287308228730823,
-        0.226890756302521
+      "esp_maligno_por_semilla": [
+        0.9066666666666666,
+        0.0,
+        0.5394736842105263
       ],
-      "f1_macro_medio": 0.2781794690095338,
+      "youden_maligno_por_semilla": [
+        0.24813008130081293,
+        0.0,
+        0.5394736842105263
+      ],
+      "youden_maligno_medio": 0.26253458850377975,
+      "f1_macro_por_semilla": [
+        0.35107270466386487,
+        0.2287308228730823,
+        0.5183360975691478
+      ],
+      "f1_macro_medio": 0.3660465417020317,
       "segmentado": false
     },
     "M4": {
@@ -54,7 +84,17 @@
         0.3902439024390244,
         0.5925925925925926
       ],
-      "sens_maligno_medio": 0.4536284251731406,
+      "esp_maligno_por_semilla": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "youden_maligno_por_semilla": [
+        0.37804878048780477,
+        0.3902439024390243,
+        0.5925925925925926
+      ],
+      "youden_maligno_medio": 0.45362842517314056,
       "f1_macro_por_semilla": [
         0.5281980305516362,
         0.4489837647732384,
@@ -69,7 +109,17 @@
         0.6707317073170732,
         0.6790123456790124
       ],
-      "sens_maligno_medio": 0.6978821640068252,
+      "esp_maligno_por_semilla": [
+        0.84,
+        0.92,
+        0.9210526315789473
+      ],
+      "youden_maligno_por_semilla": [
+        0.5839024390243903,
+        0.5907317073170733,
+        0.6000649772579596
+      ],
+      "youden_maligno_medio": 0.5915663745331411,
       "f1_macro_por_semilla": [
         0.6074248799353988,
         0.5061164843773539,
@@ -83,5 +133,6 @@
     0,
     1,
     2
-  ]
+  ],
+  "criterio_anterior_descartado": "seleccion_modelo_recomendado_v1_descartada.json"
 }

@@ -621,3 +621,34 @@ Continuando sin pausa, según instrucción del usuario: nuevo criterio de selecc
 (Youden), reevaluación completa (Tarea 5), y Grad-CAM de M1 y del modelo recomendado.
 
 ---
+
+## Resultado: nuevo criterio de selección (índice de Youden) aplicado
+
+`08e_nuevo_criterio_seleccion.py` ejecutado sobre M1-M5 ya entrenados con la
+configuración final corregida (3 semillas cada uno), usando únicamente
+`pred_val.npz` (validación, no prueba):
+
+| Modelo | Youden Maligno (medio) | Sens. Maligno | Esp. Maligno | F1 macro (medio) |
+|---|---|---|---|---|
+| M1 | 0.5555 | 0.732 | 0.824 | 0.5129 |
+| M2 | 0.0827 | 0.447 | 0.636 | 0.2534 |
+| M3 | 0.2625 | 0.780 | 0.482 | 0.3660 |
+| M4 | 0.4536 | 0.454 | 1.000 | 0.5312 |
+| **M5** | **0.5916** | 0.698 | 0.894 | 0.5977 |
+
+**Modelo recomendado: M5** (diferencia con M1, el segundo mejor, es 0.0361 —
+mayor que el umbral de desempate de 0.02, así que no hace falta recurrir al F1
+macro). A diferencia del criterio v1 (que recomendaba M3, el modelo que colapsó a
+predecir casi siempre Maligno), el índice de Youden penaliza correctamente esa
+estrategia: M3 tiene sensibilidad alta (0.780) pero especificidad muy baja (0.482),
+lo que se traduce en un Youden mediocre (0.2625), muy por debajo de M5.
+
+`seleccion_modelo_recomendado.json` (v1) renombrado a
+`seleccion_modelo_recomendado_v1_descartada.json`; el nuevo archivo con el mismo
+nombre contiene el criterio de Youden y M5 como resultado.
+
+Continuando sin pausa: Tarea 5 completa (reevaluación de métricas, IC bootstrap,
+McNemar, errores en Maligno) con M5 como modelo recomendado, y después Grad-CAM de
+M1 y de M5.
+
+---
