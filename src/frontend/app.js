@@ -26,6 +26,7 @@ function icon(name, cls = "") {
 
 const state = {
   models: [],
+  classifyModels: [], // M1/M4/M5/SVM_grupos del protocolo final (pestaña Clasificar)
   charts: {}, // key -> {loss: Chart, acc: Chart}
   selectedImage: null, // { kind: 'upload'|'sample', file?, label?, index?, previewUrl }
   pollTimer: null,
@@ -122,11 +123,22 @@ async function pollModels() {
     renderHomeCards();
     renderTrainingCards();
     renderMiniStatus();
-    populateModelSelect();
     checkTrainAllProgress();
   } catch (e) {
     // silencioso: se reintenta en el siguiente ciclo
   }
+}
+
+// Modelos del PROTOCOLO FINAL (M1, M4, M5, SVM_grupos — semilla 0, partición
+// por grupos de paciente) que ofrece la pestaña Clasificar. No cambian en
+// caliente como los de /api/models, así que basta cargarlos una vez.
+async function loadClassifyModels() {
+  try {
+    state.classifyModels = await apiGet("/api/classify_models");
+  } catch (e) {
+    state.classifyModels = [];
+  }
+  populateModelSelect();
 }
 
 function renderMiniStatus() {
@@ -579,7 +591,7 @@ async function loadSamplesIfNeeded() {
 const SELECTED_IMAGE_LABELS = {
   upload: () => "Imagen subida",
   sample: (img) => `Ejemplo del dataset — clase real: ${img.label}`,
-  holdout: (img) => `Aleatoria (30% no usado en entrenamiento) — clase real: ${img.label}`,
+  holdout: (img) => `Conjunto de prueba, partición por grupos de paciente, semilla 0 — clase real: ${img.label}`,
 };
 
 function showClassifyControls() {
@@ -592,14 +604,14 @@ function showClassifyControls() {
 
 function populateModelSelect() {
   const select = document.getElementById("model-select");
-  const trained = state.models.filter((m) => m.status === "completed");
-  if (!trained.length) {
-    select.innerHTML = `<option value="">Ningún modelo entrenado todavía</option>`;
+  const available = state.classifyModels.filter((m) => m.exists);
+  if (!available.length) {
+    select.innerHTML = `<option value="">Ningún modelo disponible</option>`;
     return;
   }
   const prevValue = select.value;
-  select.innerHTML = trained.map((m) => `<option value="${m.key}">${m.name}</option>`).join("");
-  if (trained.some((m) => m.key === prevValue)) select.value = prevValue;
+  select.innerHTML = available.map((m) => `<option value="${m.key}">${m.name}</option>`).join("");
+  if (available.some((m) => m.key === prevValue)) select.value = prevValue;
 }
 
 document.getElementById("classify-btn").addEventListener("click", handleClassify);
@@ -659,11 +671,17 @@ function renderClassifyResult(result) {
     </div>
   `).join("");
 
+  let modelInputHtml = "";
+  if (result.model_input_base64) {
+    modelInputHtml = `<div><img src="data:image/png;base64,${result.model_input_base64}" /><div class="gradcam-caption">Segmentada (entrada real del modelo)</div></div>`;
+  }
+
   let gradcamHtml = "";
   if (result.gradcam_base64) {
     gradcamHtml = `
       <div class="gradcam-row">
         <div><img src="${state.selectedImage.previewUrl}" /><div class="gradcam-caption">Original</div></div>
+        ${modelInputHtml}
         <div><img src="data:image/png;base64,${result.gradcam_base64}" /><div class="gradcam-caption">Grad-CAM</div></div>
       </div>`;
   }
@@ -755,5 +773,6 @@ function renderFigures(figs) {
 checkApiHealth();
 loadDatasetSummary();
 pollModels();
+loadClassifyModels();
 state.pollTimer = setInterval(pollModels, 3000);
 setInterval(checkApiHealth, 15000);

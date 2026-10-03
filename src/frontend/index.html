@@ -36,7 +36,7 @@
         <span class="nav-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2.1" fill="currentColor" stroke="none"/><line x1="4" y1="13" x2="20" y2="13"/><circle cx="16" cy="13" r="2.1" fill="currentColor" stroke="none"/><line x1="4" y1="19" x2="20" y2="19"/><circle cx="12" cy="19" r="2.1" fill="currentColor" stroke="none"/></svg>
         </span>
-        Entrenamiento
+        Entrenamiento (preliminar)
       </button>
       <button class="nav-item" data-page="clasificar">
         <span class="nav-icon">
@@ -81,9 +81,9 @@
         <div class="card">
           <h3>¿Qué hace esta app?</h3>
           <ul class="feature-list">
-            <li><strong>Entrenamiento</strong>: lanza y monitorea en vivo el entrenamiento de los 4 modelos, con curvas de pérdida/exactitud actualizadas en tiempo real.</li>
-            <li><strong>Clasificar imagen</strong>: sube una TC de tórax (o usa una de ejemplo) y observa la predicción de cada modelo, con mapa Grad-CAM.</li>
-            <li><strong>Resultados</strong>: tabla comparativa de métricas sobre el conjunto de prueba.</li>
+            <li><strong>Entrenamiento (preliminar)</strong>: lanza y monitorea en vivo 4 ensayos de partición por imagen, con curvas de pérdida/exactitud en tiempo real. No es el protocolo final del TFM.</li>
+            <li><strong>Clasificar imagen</strong>: sube una TC de tórax (o usa una de ejemplo) y observa la predicción de M1, M4, M5 o la SVM del protocolo final, con mapa Grad-CAM.</li>
+            <li><strong>Resultados</strong>: tabla comparativa de métricas de los ensayos preliminares sobre su conjunto de prueba.</li>
           </ul>
         </div>
         <div class="card">
@@ -111,9 +111,22 @@
     <!-- ───────────────── ENTRENAMIENTO ───────────────── -->
     <section class="page" id="page-entrenamiento">
       <header class="page-header">
-        <h1>Entrenamiento de modelos</h1>
+        <h1>Entrenamiento — ensayos preliminares (partición por imagen)</h1>
         <p class="subtitle">Este equipo entrena sobre CPU (TensorFlow en Windows no usa la GPU de forma nativa) — el entrenamiento puede tardar. Los tiempos son estimaciones orientativas.</p>
       </header>
+      <div class="banner banner-danger">
+        <span class="banner-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"/></svg>
+        </span>
+        <span>
+          <strong>Estos 4 modelos son ensayos preliminares</strong>, con partición train/val/test
+          <strong>por imagen</strong> (sin separar por paciente) — el 91-95% de sus imágenes de
+          prueba tienen un "gemelo" casi idéntico en entrenamiento. El <strong>protocolo final del
+          TFM</strong> (M1, M4, M5 y SVM+HOG, partición por grupos de paciente) no se entrena desde
+          esta app — se ejecuta con los scripts <code>08b</code>-<code>09</code> de <code>src/</code> y se usa
+          en la pestaña <strong>Clasificar imagen</strong>.
+        </span>
+      </div>
       <div class="train-all-bar">
         <button class="btn btn-primary" id="train-all-btn">Entrenar todos los modelos</button>
         <span class="train-all-status" id="train-all-status"></span>
@@ -126,7 +139,7 @@
     <section class="page" id="page-clasificar">
       <header class="page-header">
         <h1>Clasificar una imagen de TC</h1>
-        <p class="subtitle">Sube tu propia imagen o elige una de ejemplo del dataset, selecciona un modelo entrenado y obtén una predicción con explicabilidad Grad-CAM.</p>
+        <p class="subtitle">Protocolo final del TFM — M1, M4, M5 y SVM+HOG, semilla 0, partición por grupos de paciente. Sube tu propia imagen o elige una de ejemplo del dataset, selecciona un modelo y obtén una predicción con explicabilidad Grad-CAM.</p>
       </header>
 
       <div class="card random-holdout-card">
@@ -137,8 +150,9 @@
           <div>
             <strong>¿Está bien entrenado?</strong>
             <p class="muted" style="margin:4px 0 0 0;">
-              Elige una imagen al azar del 30% de datos que el modelo <strong>no vio durante el
-              entrenamiento</strong> (validación + test) para comprobar cómo generaliza.
+              Elige una imagen al azar del <strong>conjunto de prueba, partición por grupos de
+              paciente, semilla 0</strong> (156 imágenes) — el mismo que se usó para evaluar M1,
+              M4, M5 y la SVM en el TFM, y que ningún modelo de esa semilla vio en entrenamiento.
             </p>
           </div>
         </div>

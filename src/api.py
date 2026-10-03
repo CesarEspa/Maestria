@@ -38,7 +38,7 @@ SRC_DIR = Path(__file__).resolve().parent
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from config import CLASS_LABELS, DATA_DIR, SPLITS_DIR  # noqa: E402
+from config import CLASS_LABELS, DATA_DIR  # noqa: E402
 import model_utils  # noqa: E402
 import gradcam_utils  # noqa: E402
 import results_utils  # noqa: E402
@@ -76,11 +76,15 @@ def _load_model_cached(spec):
     return obj
 
 
-# ───────── Caché del "holdout" (30% no usado en entrenamiento) ────────────
-# Val (15%) + Test (15%) combinados = el 30% de dataset_splits.npz que
-# ningún modelo vio durante su entrenamiento. Se usa para el botón "Elegir
-# imagen aleatoria" en la pestaña Clasificar, para poder probar de forma
-# honesta "qué tal funciona" sobre datos realmente no vistos.
+# ──────── Caché del conjunto de prueba (partición por grupos, semilla 0) ──
+# Las 156 imágenes de prueba de la partición por grupos de paciente, semilla
+# 0 — las mismas que evaluó 09_evaluacion_final.py para M1-M5 y SVM_grupos.
+# Se usa para el botón "Elegir imagen aleatoria" en la pestaña Clasificar.
+# OJO: esto NO es el holdout de la partición por imagen (dataset_splits.npz)
+# que usaba esta función antes — esa partición tiene 91-95% de imágenes de
+# prueba con un "gemelo" casi idéntico en entrenamiento (ver README.md,
+# "Posible fuga de datos"), así que no era realmente "no vista". La
+# partición por grupos de paciente sí lo es.
 _holdout_cache = None
 
 
@@ -88,18 +92,8 @@ def _load_holdout_pool():
     global _holdout_cache
     if _holdout_cache is not None:
         return _holdout_cache
-
-    npz_path = SPLITS_DIR / "dataset_splits.npz"
-    if not npz_path.exists():
-        raise HTTPException(
-            404,
-            "No se encontró outputs/splits/dataset_splits.npz. "
-            "Ejecuta primero 02_preprocessing.py."
-        )
-    data = np.load(npz_path)
-    X_holdout = np.concatenate([data["X_val"], data["X_test"]], axis=0)
-    y_holdout = np.concatenate([data["y_val"], data["y_test"]], axis=0)
-    _holdout_cache = (X_holdout, y_holdout)
+    X_test, y_test, _ = model_utils.cargar_test_grupos_seed0()
+    _holdout_cache = (X_test, y_test)
     return _holdout_cache
 
 
@@ -187,6 +181,20 @@ def model_log(key: str):
 
 # ─────────────────────────────── Clasificación ─────────────────────────────
 
+@app.get("/api/classify_models")
+def classify_models():
+    """
+    Los 4 modelos del PROTOCOLO FINAL (M1, M4, M5, SVM_grupos — semilla 0,
+    partición por grupos de paciente) que ofrece la pestaña Clasificar. No
+    confundir con /api/models (los 4 ensayos preliminares, partición por
+    imagen, de la pestaña Entrenamiento).
+    """
+    return [
+        {"key": m["key"], "name": m["name"], "exists": m["exists"]}
+        for m in model_utils.available_models()
+    ]
+
+
 @app.get("/api/samples")
 def list_samples():
     """Imágenes de ejemplo del propio dataset, agrupadas por clase, para
@@ -217,11 +225,11 @@ def _predict_and_explain(pil_img, model_key):
 def _predict_and_explain_array(img_array01, model_key):
     """
     Núcleo de la clasificación: recibe una imagen YA preprocesada (float32,
-    224x224x3, en [0,1]) y devuelve predicción + Grad-CAM. Se usa tanto para
-    imágenes subidas/de ejemplo (previamente preprocesadas desde un archivo)
-    como para imágenes del conjunto de test, que ya vienen preprocesadas tal
-    cual se guardaron en dataset_splits.npz — así se clasifican exactamente
-    los mismos píxeles que se usaron para calcular las métricas de 06_evaluate.py.
+    224x224x3, en [0,1]) y devuelve predicción + Grad-CAM, usando el modelo
+    del protocolo final indicado (M1, M4, M5 o SVM_grupos, semilla 0). Para
+    M5, model_utils.predict_keras aplica además la segmentación pulmonar
+    (02b_segmentation.segment_lungs) antes de predecir — exactamente igual
+    que 09_evaluacion_final.py.
     """
     specs = {m["key"]: m for m in model_utils.available_models()}
     spec = specs.get(model_key)
@@ -233,9 +241,10 @@ def _predict_and_explain_array(img_array01, model_key):
     obj = _load_model_cached(spec)
 
     if spec["type"] == "keras":
-        proba = model_utils.predict_keras(obj, img_array01)
+        proba, model_input01 = model_utils.predict_keras(obj, img_array01, spec)
     else:
         proba = model_utils.predict_svm(obj, img_array01)
+        model_input01 = img_array01
 
     pred_idx = int(np.argmax(proba))
     result = {
@@ -243,11 +252,20 @@ def _predict_and_explain_array(img_array01, model_key):
         "confidence": float(proba[pred_idx]),
         "probabilities": {CLASS_LABELS[i]: float(p) for i, p in enumerate(proba)},
         "gradcam_base64": None,
+        "model_input_base64": None,
     }
+
+    # Para M5, la imagen que realmente ve el modelo (segmentada) es distinta
+    # de la que subió/eligió el usuario — se muestra aparte para que quede
+    # claro qué está interpretando el Grad-CAM.
+    if spec.get("segmentado"):
+        buf = io.BytesIO()
+        Image.fromarray((np.clip(model_input01, 0, 1) * 255).astype("uint8")).save(buf, format="PNG")
+        result["model_input_base64"] = base64.b64encode(buf.getvalue()).decode("ascii")
 
     if spec["type"] == "keras":
         try:
-            overlay, _, _ = gradcam_utils.gradcam_overlay_for_image(obj, img_array01, pred_index=pred_idx)
+            overlay, _, _ = gradcam_utils.gradcam_overlay_for_image(obj, model_input01, pred_index=pred_idx)
             if overlay is not None:
                 buf = io.BytesIO()
                 Image.fromarray((overlay * 255).astype("uint8")).save(buf, format="PNG")
@@ -282,15 +300,15 @@ def classify_sample(model_key: str, label: str, index: int):
     return result
 
 
-# ───────────── Imagen aleatoria del holdout (30%: validación + test) ──────
+# ──────── Imagen aleatoria del conjunto de prueba (grupos, semilla 0) ─────
 
 @app.get("/api/holdout_random")
 def holdout_random():
     """
-    Elige un índice al azar dentro del 30% de datos no usado en
-    entrenamiento (validación + test combinados). Es lo que consume el
-    botón "Elegir imagen aleatoria" de la pestaña Clasificar, para probar
-    de forma honesta cómo generaliza el modelo.
+    Elige un índice al azar dentro del conjunto de prueba, partición por
+    grupos de paciente, semilla 0 (156 imágenes, ninguna vista en
+    entrenamiento por M1/M4/M5/SVM_grupos de esa semilla). Es lo que
+    consume el botón "Elegir imagen aleatoria" de la pestaña Clasificar.
     """
     X_holdout, y_holdout = _load_holdout_pool()
     index = random.randrange(len(X_holdout))
