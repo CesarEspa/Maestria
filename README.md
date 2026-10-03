@@ -1238,12 +1238,21 @@ tampoco resuelve el problema que sí resuelve transfer learning.
 
 ## Protocolo corregido (partición por grupos de paciente)
 
-*(Octubre 2026. Fuente completa: `PROMPT_CORRECCIONES_TUTORA.md`,
-`outputs/experimentos/registro.md` —bitácora tarea por tarea— y
+*(Octubre 2026. Fuente completa: `PROMPT_CORRECCIONES_TUTORA.md` (nombre de archivo
+heredado; las correcciones del TFM son la fuente de estas instrucciones, no una
+persona), `outputs/experimentos/registro.md` —bitácora tarea por tarea— y
 `outputs/experimentos/RESUMEN_PARA_DOCUMENTO.md` —resumen consolidado con todas
 las tablas. Esta sección es un resumen de ese documento; para el detalle
 completo, incluidas las cifras de validación y las incidencias técnicas,
-consultar esos dos archivos.)*
+consultar esos dos archivos.*
+
+*Las cifras de M1/M2/M3 y el modelo recomendado que siguen son las de una
+**segunda corrección** (posterior a las 7 tareas iniciales): un bug en el
+schedule de la tasa de aprendizaje invalidaba el entrenamiento de M1/M2/M3, y el
+criterio de selección original (sensibilidad Maligno pura) premiaba un modelo
+colapsado. Ambos se corrigieron — detalle completo en `registro.md`, incidencia
+"schedule de la tasa de aprendizaje y criterio de selección". Las cifras de M4,
+M5 y SVM no cambiaron.)*
 
 ### Por qué se corrigió
 
@@ -1279,9 +1288,9 @@ Más la línea base **SVM+HOG**, entrenada en ambas particiones (`SVM_grupos` y
 
 | Modelo | Exactitud | F1 Macro | AUC macro | Sens. Maligno | Sens. Benigno |
 |---|---:|---:|---:|---:|---:|
-| M1 (CNN, sin aumento) | 0.502 | 0.346 | 0.779 | 0.426 | 0.241 |
-| M2 (CNN + geométrico) | 0.447 | 0.258 | 0.586 | 0.333 | 0.208 |
-| M3 (CNN + CutMix) | 0.468 | 0.212 | 0.614 | 0.667 | **0.000** |
+| M1 (CNN, sin aumento) | 0.618 | 0.432 | 0.771 | 0.663 | 0.125 |
+| M2 (CNN + geométrico) | 0.453 | 0.234 | 0.586 | 0.392 | **0.000** |
+| M3 (CNN + CutMix) | 0.483 | 0.282 | 0.544 | 0.504 | **0.000** |
 | M4 (EfficientNetB0) | 0.665 | 0.558 | 0.813 | 0.591 | 0.236 |
 | M5 (EfficientNetB0 + segmentación) | 0.684 | 0.568 | 0.827 | 0.762 | 0.312 |
 | **SVM_grupos** | **0.857** | **0.675** | **0.881** | 0.941 | 0.208 |
@@ -1301,63 +1310,86 @@ sobre el efecto de la fuga de datos (ver `svm_imagen_vs_grupos.png`).
 
 <img src="outputs/figures/svm_imagen_vs_grupos.png" width="620">
 
-### El criterio de "modelo recomendado" pre-registrado eligió un modelo colapsado — y eso se documenta tal cual
+### El criterio de "modelo recomendado": de la sensibilidad pura al índice de Youden
 
-Criterio fijado *antes* de ver el test (corrección explícita del protocolo:
-antes se elegía mirando la clase Benigno; ahora el criterio se centra en
-Maligno y se fija de antemano): mayor sensibilidad media en Maligno sobre
-VALIDACIÓN. Ese criterio escogió **M3** (CNN + CutMix), con sensibilidad
-Maligno de validación 0.780 frente al 0.698 de M5.
+**Primer criterio probado** (fijado antes de ver el test): mayor sensibilidad
+media en Maligno sobre VALIDACIÓN. Escogió **M3** (CNN + CutMix), con
+sensibilidad Maligno de validación 0.780. Al mirar el detalle por semilla, M3
+tenía `sens_maligno=[0.34, 1.00, 1.00]` junto con `f1_macro=[0.38, 0.23, 0.23]`
+— la firma de un modelo que **colapsó a predecir "Maligno" para todo**, no de
+un modelo que de verdad discrimina mejor. La sensibilidad "pura", sin ningún
+control de especificidad, premiaba exactamente ese colapso.
 
-El problema: al mirar el detalle por semilla, M3 tiene `sens_maligno=[0.34,
-1.00, 1.00]` junto con `f1_macro=[0.38, 0.23, 0.23]` — sensibilidad perfecta
-simultánea con F1 macro muy bajo es la firma de un modelo que **colapsó a
-predecir "Maligno" para todo**, no de un modelo que de verdad discrimina
-mejor. Confirmado en test: `sens_benigno = 0.000 ± 0.000` (nunca, en ninguna
-semilla, predijo "Benigno"). McNemar (`outputs/experimentos/mcnemar.csv`)
-confirma que M3 es significativamente peor que M4, M5 y SVM_grupos
-(p < 0.001 en los tres casos, agregado) pero no distinguible de M1/M2 (que
-también colapsan, de otras formas).
+**Criterio corregido:** mayor **índice de Youden de la clase Maligno**
+(sensibilidad + especificidad − 1) en validación, media de 3 semillas, con
+desempate (<0.02) por F1 macro. Un clasificador constante tiene Youden = 0
+exactamente, así que ya no premia el colapso. Este cambio se hizo *después* de
+haber mirado el test una vez bajo el criterio anterior — una excepción real y
+declarada al principio de "nunca mirar el test antes de fijar el criterio"
+(ver `registro.md`).
 
-**No se cambió el criterio ni el resultado tras detectar esto** — hacerlo
-retroactivamente habría violado el propósito mismo de fijar un criterio antes
-de ver el test. Se documenta como lo que es: una lección metodológica real
-sobre los límites de un criterio de sensibilidad "pura", sin ningún control
-de especificidad o balance entre clases.
+| Modelo | Youden Maligno (val., medio) | F1 macro (val., medio) |
+|---|---:|---:|
+| M1 | 0.556 | 0.513 |
+| M2 | 0.083 | 0.253 |
+| M3 | 0.263 | 0.366 |
+| M4 | 0.454 | 0.531 |
+| **M5** | **0.592** | 0.598 |
 
-### ¿El aumento de datos sigue colapsando con parada por F1 macro? — Sí
+**Modelo recomendado (criterio corregido): M5** (EfficientNetB0 + segmentación),
+sin colapso en ninguna semilla. McNemar (`outputs/experimentos/mcnemar.csv`)
+confirma que M5 es significativamente mejor que M2 y M3 (p < 0.001, agregado),
+indistinguible de M4 (p=0.538) y significativamente peor que SVM_grupos
+(p < 0.001). El resultado del criterio original (M3, modelo recomendado v1,
+conservado en `seleccion_modelo_recomendado_v1_descartada.json`) se mantiene
+documentado como lección metodológica, no se borró.
 
-La hipótesis de la corrección #2 era que vigilar F1 macro (en vez de
-`val_loss`) evitaría el colapso de las CNN entrenadas con aumento de datos.
-**No lo evita.** Las 4 configuraciones de la rejilla de M1 (sin aumento)
-dieron exactamente la misma F1 macro de validación y el mismo patrón
-(`sens_benigno=0.00`) sin importar `lr` ni `dropout`; M3 (CutMix) reproduce
-esos mismos números de forma idéntica, y en test nunca predice "Benigno". M2
-(geométrico) colapsa a predecir "Normal" en 2 de 3 semillas (el peor registro
-de errores clínicos: 159/239 malignos clasificados como sanos). Solo los
-modelos de transferencia (M4, M5) no muestran este patrón en ninguna semilla.
-Conclusión: el colapso no dependía solo de `monitor="val_loss"` ni de la fuga
-de datos de la ronda anterior — persiste con partición por grupos y parada
-por F1. Detalle completo, con las curvas de aprendizaje, en
-`RESUMEN_PARA_DOCUMENTO.md` sección 3.
+### ¿Sigue colapsando la CNN propia (M1/M2/M3)? — Sí, pero ya no por el bug de schedule
 
-### Explicabilidad: Grad-CAM++ y Score-CAM confirman el patrón "constante" con dos métodos más
+Un bug real en el schedule de la tasa de aprendizaje (`ReduceLROnPlateau` sobre
+`val_f1_macro`) decaía la tasa a ~1e-6 antes de que la red saliera de su meseta
+inicial de entrenamiento — invalidando los resultados originales de M1/M2/M3
+(la conclusión "el colapso persiste con F1 macro" de una versión anterior de
+esta sección **no era válida**, era un artefacto de ese bug). Corregido con un
+callback que no cuenta paciencia hasta que la red sale genuinamente de la
+meseta (`EarlyStoppingTrasMeseta`). Con la tasa de aprendizaje correcta
+(`lr=1e-4`), la red sí aprende de forma genuina (`loss` baja de 1.10 a 0.67).
+
+Reentrenados M1/M2/M3 con el schedule corregido, el colapso **persiste, pero
+de forma distinta**: M1 colapsa a una clase distinta según la semilla
+(Maligno en la semilla 0, Normal en la semilla 1, las tres clases presentes
+solo en la semilla 2); M2 y M3 nunca predicen "Benigno" en ninguna de las 3
+semillas, con aumento geométrico o CutMix por igual. Los modelos de
+transferencia (M4, M5) no muestran este patrón en ninguna semilla. Conclusión:
+el colapso no era (solo) el bug de schedule — hay una causa más profunda,
+compatible con el tamaño reducido del dataset y una arquitectura entrenada
+desde cero. Detalle completo, con las curvas de aprendizaje y la rejilla de
+M1, en `RESUMEN_PARA_DOCUMENTO.md` sección 3.
+
+### Explicabilidad: Grad-CAM++ y Score-CAM confirman el patrón "constante"; M1 es la excepción
 
 <img src="outputs/gradcam/comparacion_metodos_M4.png" width="720">
 
 Sobre M4 (EfficientNetB0), los tres métodos dan correlación entre clases
 distintas ≥ 0.9998 (prácticamente constantes): Grad-CAM reproduce el
 degradado izquierda-derecha ya documentado; Grad-CAM++ y Score-CAM muestran,
-los dos, un punto caliente fijo en la esquina inferior derecha. Que dos
-métodos con mecanismos de cálculo completamente distintos (uno basado en
+los dos, un punto caliente fijo en la esquina inferior derecha. M5 (modelo
+recomendado) reproduce el mismo patrón constante (correlación 0.99998). Que
+dos métodos con mecanismos de cálculo completamente distintos (uno basado en
 gradientes de orden superior, el otro sin gradientes, por enmascaramiento)
-reproduzcan el mismo patrón constante refuerza con fuerza que la causa es
-estructural —cómo EfficientNetB0 integra información espacial en su última
-capa— y no un artefacto de un método de explicabilidad en particular.
-Hallazgo adicional, más grave: de 42 mapas evaluados (todas las
-clases/métodos/aciertos), **0% cae mayormente dentro del tejido pulmonar
-real** — en su estado actual, ninguno de estos mapas sería fiable como apoyo
-visual para un radiólogo.
+reproduzcan el mismo patrón constante en dos modelos EfficientNetB0 distintos
+refuerza con fuerza que la causa es estructural —cómo esta arquitectura
+integra información espacial en su última capa— y no un artefacto de un
+método de explicabilidad en particular.
+
+**M1 (CNN propia) es la excepción:** su Grad-CAM sí cambia según la clase
+predicha (correlación 0.111, muy por debajo de EfficientNet) — el patrón
+"constante" no es inevitable en toda arquitectura sobre estas imágenes, es
+algo específico de EfficientNetB0. Hallazgo adicional, más grave: de las 51
+filas evaluadas (`explicabilidad.csv`, todas las clases/métodos/aciertos de
+M1, M4 y M5), **0% cae mayormente dentro del tejido pulmonar real** — en su
+estado actual, ninguno de estos mapas sería fiable como apoyo visual para un
+radiólogo, ni siquiera M1, cuyo mapa sí distingue entre clases.
 
 ### Catálogo de figuras y datos nuevos de esta ronda
 
@@ -1384,6 +1416,16 @@ si el archivo ya existe, se salta).
   el entrenamiento final ya superaba el umbral de ~14h** fijado como límite
   para decidir entre 3 y 5 semillas — se usaron 3, tal como preveía la propia
   instrucción para ese caso. Detalle de la estimación en `registro.md`.
+- **Bug real en el schedule de la tasa de aprendizaje de M1/M2/M3**
+  (`ReduceLROnPlateau` sobre `val_f1_macro` decaía la tasa a ~1e-6 antes de que
+  la red saliera de su meseta inicial) — invalidó los primeros resultados de
+  esta sección. Corregido con `EarlyStoppingTrasMeseta`, un callback que no
+  cuenta paciencia hasta que la red sale genuinamente de la meseta. M1/M2/M3 se
+  reentrenaron por completo.
+- **Criterio de "modelo recomendado" cambiado de sensibilidad pura a índice de
+  Youden** tras detectar que el primero premiaba un modelo colapsado (M3) —
+  ver sección anterior. Cambio documentado como ocurrido después de una
+  primera mirada al test, por honestidad metodológica.
 
 Detalle completo de todas las incidencias, tarea por tarea, en
 `outputs/experimentos/registro.md`.
@@ -1444,9 +1486,11 @@ Detalle completo de todas las incidencias, tarea por tarea, en
   en los tres), reforzando que la causa es estructural de EfficientNetB0.
 - ✅ Múltiples semillas (3) con **IC 95% por bootstrap y pruebas de McNemar**,
   en vez de un único split — exactamente lo que pedía este punto.
-- ✅ Investigado por qué el aumento de datos sigue colapsando: persiste con
-  partición por grupos y parada temprana por F1 macro (no solo con
-  `val_loss`), tanto para augmentation geométrico como para CutMix.
+- ✅ Investigado por qué la CNN propia (M1/M2/M3) sigue colapsando: tras
+  corregir un bug real en el schedule de la tasa de aprendizaje
+  (`EarlyStoppingTrasMeseta` en vez de `ReduceLROnPlateau`), el colapso
+  persiste —de forma distinta por semilla— tanto sin aumento como con
+  aumento geométrico o CutMix; no era (solo) el bug de schedule.
 
 **Pendiente:**
 
