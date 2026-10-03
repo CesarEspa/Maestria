@@ -9,9 +9,15 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "Datos" / "The IQ-OTHNCCD lung cancer dataset"
 OUTPUT_DIR = PROJECT_ROOT / "outputs"
-FIGURES_DIR = OUTPUT_DIR / "figures"
-MODELS_DIR = OUTPUT_DIR / "models"
-GRADCAM_DIR = OUTPUT_DIR / "gradcam"
+# Los modelos/figuras/gradcam de estos 4 escenarios (los que entrena/sirve esta
+# app web) se movieron a legacy_particion_imagen/ durante la corrección
+# metodológica (partición por grupos de paciente, ver README.md). La app sigue
+# usando esos mismos 4 modelos (entrenados con la partición por imagen), así
+# que sus rutas apuntan ahí para no perder la función de clasificación/demo.
+LEGACY_DIR = OUTPUT_DIR / "legacy_particion_imagen"
+FIGURES_DIR = LEGACY_DIR / "figures"
+MODELS_DIR = LEGACY_DIR / "models"
+GRADCAM_DIR = LEGACY_DIR / "gradcam"
 SPLITS_DIR = OUTPUT_DIR / "splits"
 
 # Crear directorios si no existen
@@ -19,7 +25,7 @@ for d in [FIGURES_DIR, MODELS_DIR, GRADCAM_DIR, SPLITS_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 # ── Clases ─────────────────────────────────────────────────────────
-CLASS_NAMES = ["Bengin cases", "Malignant cases", "Normal cases"]
+CLASS_NAMES = ["Bengin cases", "Malignant cases", "Normal cases"]   
 CLASS_LABELS = ["Benigno", "Maligno", "Normal"]  # Para gráficos en español
 NUM_CLASSES = 3
 
