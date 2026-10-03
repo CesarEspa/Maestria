@@ -20,12 +20,19 @@ significa, con el detalle necesario para escribir el documento.
     Las correcciones del TFM pidieron corregir la partición train/val/test
     (se hacía por imagen, permitiendo fuga de datos entre cortes casi
     idénticos del mismo paciente) y otros 7 problemas metodológicos. Se
-    implementó un protocolo nuevo completo — ver FASE 11 en la sección 3
-    (cronología), sección 4.9 (tabla final) y, sobre todo,
-    outputs/experimentos/RESUMEN_PARA_DOCUMENTO.md (resumen consolidado
-    con TODAS las tablas finales, listo para citar) y
-    outputs/experimentos/registro.md (bitácora completa, tarea por tarea).
-    LOS RESULTADOS DE ESE PROTOCOLO SON LOS QUE CUENTAN PARA EL TFM. Las
+    implementó un protocolo nuevo completo en 7 tareas (FASE 11, sección 3).
+    Una SEGUNDA corrección posterior (FASE 12, misma sección 3) arregló un
+    bug de schedule que invalidaba el entrenamiento de M1/M2/M3 y sustituyó
+    el criterio de selección del modelo recomendado (de sensibilidad pura a
+    índice de Youden) tras detectar que premiaba un modelo colapsado. LAS
+    CIFRAS VIGENTES DE M1/M2/M3 Y DEL MODELO RECOMENDADO SON LAS DE LA FASE
+    12, no las de la FASE 11 — ver sección 4.9 (tabla final, ya con las
+    cifras de la Fase 12) y, sobre todo, outputs/experimentos/RESUMEN_PARA_DOCUMENTO.md
+    (resumen consolidado con TODAS las tablas finales, listo para citar) y
+    outputs/experimentos/registro.md (bitácora completa, tarea por tarea,
+    incluida la incidencia "schedule de la tasa de aprendizaje y criterio
+    de selección"). Las cifras de M4, M5 y SVM no cambiaron entre fases.
+    LOS RESULTADOS DE LA FASE 12 SON LOS QUE CUENTAN PARA EL TFM. Las
     secciones 4.1-4.8 y gran parte de la sección 9 de este archivo narran
     la ronda PRELIMINAR (partición por imagen) — se conservan íntegras
     porque el documento las cita como antecedente metodológico (el propio
@@ -997,17 +1004,91 @@ para el detalle completo):
     automática mientras corran procesos largos.
   - Bug real en 10_explicabilidad.py (Tarea 6, ver arriba).
 
-ESTADO ACTUAL (tras la FASE 11): las 7 tareas de la corrección
-metodológica están completas, commiteadas y pusheadas (una por tarea).
-El protocolo corregido (partición por grupos) es el que cuenta para
-las conclusiones del TFM — ver outputs/experimentos/RESUMEN_PARA_DOCUMENTO.md
-para el resumen consolidado con todas las tablas finales, listo para
-citar en el documento, y outputs/experimentos/registro.md para la
-bitácora completa tarea por tarea. El protocolo anterior (secciones
-4.1-4.8 de este archivo) se conserva como antecedente metodológico,
-con sus modelos y figuras movidos a outputs/legacy_particion_imagen/.
-README.md y PROYECTO_CLAUDE_CONTEXTO.txt actualizados para dejar claro
-cuál conjunto de resultados es el vigente.
+ESTADO TRAS LA FASE 11: las 7 tareas de la corrección metodológica
+completas, commiteadas y pusheadas. Pero los resultados de M1/M2/M3 y
+el modelo recomendado (M3) de esta fase quedaron INVALIDADOS por la
+FASE 12 que sigue — ver esa sección para las cifras vigentes.
+
+FASE 12 — Segunda corrección: bug de schedule en M1/M2/M3 y criterio
+de selección defectuoso (octubre 2026, posterior a la FASE 11)
+
+Dos problemas detectados en los resultados de la FASE 11, NO errores de
+implementación sino fallos del propio diseño experimental:
+
+(1) BUG DE SCHEDULE: `ReduceLROnPlateau(monitor="val_f1_macro",
+patience=5)` decaía la tasa de aprendizaje de M1/M2/M3 a ~1e-6 antes de
+que la red saliera de su meseta inicial de entrenamiento (loss nunca
+bajaba de ln(3)≈1.10, accuracy nunca subía de 0.53) — F1 macro es una
+métrica discreta/escalonada en entrenamiento temprano, así que "sin
+mejora en 5 épocas" se disparaba casi de inmediato. TODO lo que la
+FASE 11 reportó sobre M1/M2/M3 (incluida la conclusión "el colapso
+persiste con F1 macro") es resultado de este bug, no de la arquitectura
+— **queda retractado**.
+
+Corrección en dos iteraciones:
+  - v1: `EarlyStopping(start_from_epoch=15, patience=15)` en vez de
+    `ReduceLROnPlateau`. Funcionó para la config ganadora de M1
+    (lr=1e-4, dropout=0.25: salió de la meseta en la época 27), pero con
+    riesgo real de que la paciencia (15+15=30) agotara el entrenamiento
+    solo 3 épocas antes de esa salida.
+  - v2 (definitiva): `protocolo.EarlyStoppingTrasMeseta` — callback que
+    NO empieza a contar "mejor época" ni paciencia hasta que se cumplen
+    DOS condiciones: época >= 15 Y la red ya salió de la meseta (loss de
+    entrenamiento < 1.0 en alguna época previa, de forma permanente una
+    vez ocurrida). Aplicado a TODA la familia CNN (M1/M2/M3); M4/M5/SVM
+    no se tocaron.
+
+Reentrenamiento completo con v2 (src/08d_correccion_schedule_cnn.py):
+rejilla de M1 (4 configs, semilla 0) -> lr=1e-4/dropout=0.25 ganó
+(f1_macro_val=0.5855, salió de la meseta en época 26) -> M2/M3 con esa
+config -> aumento para M4 recalculado entre M2/M3 nuevos (empate exacto
+0.3511 vs 0.3511 -> se conserva geométrico, M4/M5 NO se reentrenan) ->
+M1/M2/M3 en semillas 1 y 2. De las 9 corridas finales de M1/M2/M3 (3
+modelos x 3 semillas), solo 2 (M1 semillas 0 y 2) salieron de la meseta
+en 60 épocas; las otras 7 nunca cruzaron loss<1.0 — el colapso NO era
+solo el bug de schedule, persiste con el schedule ya corregido, pero de
+forma distinta por semilla (ver abajo).
+
+(2) CRITERIO DE SELECCIÓN DEFECTUOSO: la sensibilidad Maligno pura
+(FASE 11) la maximiza trivialmente un modelo colapsado a predecir
+siempre "Maligno" — exactamente lo que le pasó a M3. Sustituido por el
+ÍNDICE DE YOUDEN de Maligno (sensibilidad + especificidad - 1), media
+de 3 semillas, entre M1-M5; desempate <0.02 por F1 macro medio. Un
+clasificador constante tiene Youden=0 exactamente. Este cambio de
+criterio se decidió DESPUÉS de haber mirado el test una vez bajo el
+criterio v1 — excepción real y declarada al principio de "nunca mirar
+el test antes de fijar el criterio" (src/08e_nuevo_criterio_seleccion.py).
+`seleccion_modelo_recomendado.json` v1 (M3) renombrado a
+`seleccion_modelo_recomendado_v1_descartada.json`, conservado como
+evidencia metodológica.
+
+RESULTADO DEL NUEVO CRITERIO: M5 (Youden medio 0.592) supera a M1
+(0.556, segundo), M4 (0.454), M3 (0.263) y M2 (0.083). MODELO
+RECOMENDADO: M5 — sin colapso en ninguna semilla.
+
+Tarea 5 reevaluada completa (src/09_evaluacion_final.py) con M5 como
+recomendado: M5 supera a M4 en sensibilidad Maligno (0.762 vs 0.591);
+McNemar M5 vs M4 no significativo (p=0.538, misma arquitectura, difieren
+solo en segmentación); M5 vs SVM_grupos significativo A FAVOR de
+SVM_grupos (p<0.001, SVM_grupos sigue siendo el mejor de los 7). Grad-CAM
+de M1 (nuevo) y M5 (recomendado) rehecho con src/08f_rehacer_gradcam_tras_correccion.py
+— M4 (Grad-CAM++/Score-CAM) intacto. Hallazgo nuevo: M1 es la única
+arquitectura cuyo Grad-CAM SÍ cambia según la clase (correlación 0.111,
+vs ~1.0 en M4/M5) — el patrón "constante" no es inevitable en toda
+arquitectura, es específico de EfficientNetB0.
+
+Incidencia operativa: `09_evaluacion_final.py` falló con
+UnicodeEncodeError (consola cp1252, faltaba PYTHONIOENCODING=utf-8) justo
+tras calcular todas las métricas — relanzado con el encoding correcto,
+reutilizando pred_test.npz ya cacheado, sin recalcular inferencia.
+
+ESTADO ACTUAL (tras la FASE 12): las cifras vigentes de M1/M2/M3 y el
+modelo recomendado (M5) son las de esta fase, no las de la FASE 11.
+outputs/experimentos/RESUMEN_PARA_DOCUMENTO.md, README.md y este archivo
+(secciones 4.9 y 9.7-bis más abajo) ya reflejan estas cifras. Las de M4,
+M5 y SVM no cambiaron entre ambas fases. Ver outputs/experimentos/registro.md,
+incidencia "schedule de la tasa de aprendizaje y criterio de selección",
+para el detalle completo.
 
 
 ====================================================================
@@ -1338,53 +1419,65 @@ outputs/legacy_particion_imagen/ — ver sección 4.9 para los resultados
 vigentes del protocolo corregido.)
 
 --------------------------------------------------------------------
-4.9 PROTOCOLO CORREGIDO (Fase 11) — Tabla final, M1-M5 + SVM, test agregado 3 semillas
+4.9 PROTOCOLO CORREGIDO (Fase 12, vigente) — Tabla final, M1-M5 + SVM, test agregado 3 semillas
 --------------------------------------------------------------------
 Esta es la tabla que CUENTA para las conclusiones del TFM (partición
-por grupos de paciente, sin fuga). Fuente completa:
-outputs/experimentos/RESUMEN_PARA_DOCUMENTO.md.
+por grupos de paciente, sin fuga, con el schedule de M1/M2/M3 ya
+corregido y el criterio de Youden). Las cifras de M1/M2/M3 y el modelo
+recomendado de la FASE 11 están INVALIDADAS — ver FASE 12 arriba.
+Fuente completa: outputs/experimentos/RESUMEN_PARA_DOCUMENTO.md.
 
 Modelo                    Exactitud  F1 Macro  AUC macro  Sens.Maligno  Sens.Benigno
-M1 (CNN sin aumento)         0.502     0.346     0.779      0.426          0.241
-M2 (CNN+geométrico)           0.447     0.258     0.586      0.333          0.208
-M3 (CNN+CutMix, RECOMENDADO*) 0.468     0.212     0.614      0.667          0.000  <- colapsa, ver nota
-M4 (EfficientNetB0)             0.665     0.558     0.813      0.591          0.236
-M5 (EfficientNetB0+segment.)      0.684     0.568     0.827      0.762          0.312  <- mejor de los profundos
-SVM_grupos (sin fuga)               0.857     0.675     0.881      0.941          0.208  <- MEJOR de los 7
-SVM_imagen (CON fuga, referencia)      0.998     0.996     1.000      1.000          0.981
+M1 (CNN sin aumento)          0.618     0.432     0.771      0.663          0.125
+M2 (CNN+geométrico)            0.453     0.234     0.586      0.392          0.000  <- nunca predice Benigno
+M3 (CNN+CutMix)                 0.483     0.282     0.544      0.504          0.000  <- nunca predice Benigno
+M4 (EfficientNetB0)               0.665     0.558     0.813      0.591          0.236
+M5 (EfficientNetB0+segment., RECOMENDADO) 0.684  0.568  0.827   0.762       0.312  <- mejor de los profundos
+SVM_grupos (sin fuga)                  0.857     0.675     0.881      0.941          0.208  <- MEJOR de los 7
+SVM_imagen (CON fuga, referencia)         0.998     0.996     1.000      1.000          0.981
 
 Sensibilidad y especificidad completas por clase:
 Modelo           Sens.Ben  Sens.Mal  Sens.Nor  Esp.Ben  Esp.Mal  Esp.Nor
-M1                  0.241    0.426    0.667    0.729    0.982    0.594
-M2                   0.208    0.333    0.667    0.955    0.794    0.333
-M3                    0.000    0.667    0.333    1.000    0.333    0.667
+M1                  0.125    0.663    0.694    0.895    0.947    0.576
+M2                   0.000    0.392    0.661    1.000    0.636    0.403
+M3                    0.000    0.504    0.589    1.000    0.553    0.517
 M4                     0.236    0.591    0.882    0.842    1.000    0.685
 M5                      0.312    0.762    0.687    0.854    0.891    0.786
 SVM_grupos                0.208    0.941    0.921    0.973    0.987    0.817
 SVM_imagen                   0.981    1.000    1.000    1.000    1.000    0.997
 
-*M3 fue elegido "modelo recomendado" por el criterio fijado de antemano
-(mayor sens.Maligno medio en VALIDACIÓN) pero sus cifras por semilla
-revelan que colapsa a predecir "Maligno" siempre en 2 de 3 semillas —
-ver FASE 11 arriba y RESUMEN_PARA_DOCUMENTO.md sección 2 para el
-análisis completo de esta paradoja metodológica. Si el criterio fuera
-desempeño agregado de test, el mejor sería SVM_grupos (general) o M5
-(entre los modelos profundos).
+Criterio de selección (Youden Maligno en VALIDACIÓN, media 3 semillas,
+entre M1-M5): M5=0.592 (ganador), M1=0.556, M4=0.454, M3=0.263, M2=0.083.
+M5 elegido como modelo recomendado — sin colapso en ninguna semilla, a
+diferencia de M3 (el recomendado bajo el criterio v1 descartado, Youden
+mediocre por su especificidad Maligno baja, 0.482 en validación). Si el
+criterio fuera desempeño agregado de test, el mejor seguiría siendo
+SVM_grupos (general) y M5 entre los modelos profundos — ahora el
+criterio pre-registrado y el mejor desempeño observado COINCIDEN en M5
+(a diferencia de la FASE 11, donde el criterio recomendaba M3 pero el
+mejor desempeño real era de M5).
 
-McNemar (M3 vs. resto, agregado 3 semillas, corrección de Holm):
-significativo contra M4 (p=2.7e-10), M5 (p=1.1e-10) y SVM_grupos
-(p=1.3e-45); NO significativo contra M1 (p=0.376) ni M2 (p=0.460) —
-también colapsan, de otras formas.
+McNemar (M5 vs. resto, agregado 3 semillas, corrección de Holm):
+significativo contra M2 (p=1.6e-11) y M3 (p=2.5e-10); AL BORDE contra
+M1 (p=0.054, no significativo tras Holm, ninguna semilla individual
+significativa); NO significativo contra M4 (p=0.538, misma arquitectura,
+difieren solo en segmentación); SVM_grupos es significativamente MEJOR
+que M5 (p=8.5e-13) — las CNN de este protocolo no alcanzan al SVM
+clásico en esta partición.
 
 Errores clínicos (maligno mal clasificado, suma 3 semillas, de 239
-casos): M2 es el peor (159 -> Normal); M3 también comete 80 -> Normal
-(su colapso en semilla 0); M4 y M5 reducen bastante (53 y 37); SVM_grupos
-el mejor entre los creíbles (14); SVM_imagen 0 (por la fuga, no mérito).
+casos): M2 sigue siendo el peor (145 -> Normal, 60.7%); M3 también alto
+(119 -> Normal); M4 y M5 reducen bastante (53 y 37); SVM_grupos el mejor
+entre los creíbles (14); SVM_imagen 0 (por la fuga, no mérito). M5 tiene
+la menor tasa de error clínico entre los 5 modelos profundos (57/239=23.8%).
 
-Explicabilidad (Grad-CAM/Grad-CAM++/Score-CAM sobre M4, outputs/gradcam/):
-correlación entre clases 0.9998/1.0000/0.99999 — confirma con 3 métodos
-independientes el patrón "mapa constante" ya visto en la Fase 10. 0% de
-42 mapas cae mayormente dentro del tejido pulmonar real.
+Explicabilidad (outputs/gradcam/, explicabilidad.csv, 51 filas): sobre
+M4, Grad-CAM/Grad-CAM++/Score-CAM dan correlación entre clases
+0.9998/1.0000/0.99999 (mapas constantes); M5 (Grad-CAM) reproduce el
+mismo patrón (0.99998). M1 (Grad-CAM) es la EXCEPCIÓN: correlación 0.111
+— su mapa sí cambia según la clase, a diferencia de EfficientNetB0. 0%
+de las 51 filas cae mayormente dentro del tejido pulmonar real, ni
+siquiera M1.
 
 
 ====================================================================
@@ -2418,13 +2511,17 @@ limitados — que es, en última instancia, la situación realista a la
 que se enfrenta gran parte de la investigación aplicada en este campo.
 
 --------------------------------------------------------------------
-9.7-bis Conclusiones ACTUALIZADAS (protocolo corregido, Fase 11) — versión definitiva
+9.7-bis Conclusiones ACTUALIZADAS (protocolo corregido, Fase 12, vigente) — versión definitiva
 --------------------------------------------------------------------
 Esta subsección reemplaza a 9.7 para el documento final. Se mantiene
 9.7 porque la corrección que relata (el colapso de entrenamiento y su
 diagnóstico en tres rondas) sigue siendo parte legítima de la
 narrativa metodológica del TFM — pero las cifras y la conclusión sobre
-"cuál es el mejor modelo" deben tomarse de aquí.
+"cuál es el mejor modelo" deben tomarse de aquí. Esta versión incorpora
+además una SEGUNDA corrección (Fase 12) posterior a la primera: un bug
+de schedule en M1/M2/M3 y un criterio de selección defectuoso. Las
+cifras de M1/M2/M3 y el modelo recomendado de la Fase 11 están
+invalidadas; las de M4, M5 y SVM no cambiaron.
 
 La corrección metodológica pedida en las correcciones del TFM —reconstruir la
 partición train/val/test a nivel de GRUPO de paciente en vez de
@@ -2437,48 +2534,72 @@ entrenada con la partición antigua (exactitud 0.998), la diferencia es
 la demostración más directa de todo el proyecto sobre el efecto
 cuantitativo de la fuga de datos; (2) entre los modelos profundos,
 EfficientNetB0 sobre imágenes segmentadas (M5) es el mejor, con
-sensibilidad Maligno de 0.762 y sin señales de colapso; (3) el colapso
-de las CNN entrenadas desde cero con aumento de datos —ya fuera
-geométrico o CutMix— PERSISTE incluso con partición por grupos y
-parada temprana por F1 macro (no solo con `val_loss` como se pensaba
-originalmente), lo que descarta esas dos hipótesis como causa única y
-apunta a una interacción más profunda entre el tamaño del dataset, el
-desbalance de clases, y cualquier arquitectura entrenada desde cero
-bajo este régimen de entrenamiento.
+sensibilidad Maligno de 0.762 y sin señales de colapso.
+
+(3) Sobre el colapso de las CNN entrenadas desde cero, la historia
+tiene dos capas. La Fase 11 concluyó que el colapso "persiste incluso
+con parada temprana por F1 macro" — esa conclusión **no era válida**:
+un bug real en el schedule (`ReduceLROnPlateau` sobre `val_f1_macro`)
+apagaba el aprendizaje de M1/M2/M3 antes de que la red saliera de su
+meseta inicial, así que esos resultados no reflejaban la arquitectura,
+reflejaban el bug. Corregido con un callback de activación diferida
+(`EarlyStoppingTrasMeseta`, Fase 12), la red sí aprende de forma
+genuina (loss de entrenamiento baja de ~1.10 a ~0.67 con la
+configuración correcta). Reentrenadas M1/M2/M3 con el schedule
+corregido, el colapso por clase SÍ persiste, pero como un fenómeno
+real y distinto: qué clase "domina" las predicciones depende de la
+semilla (M1), o M2/M3 nunca predicen "Benigno" en ninguna semilla,
+sin importar el tipo de aumento de datos. Esto descarta el bug de
+schedule como causa única, y apunta a una interacción más profunda
+entre el tamaño del dataset, el desbalance de clases, y una
+arquitectura entrenada desde cero — reforzado por que los modelos de
+transferencia (M4, M5) no muestran este patrón en ninguna semilla.
 
 Un hallazgo metodológico adicional, poco común de documentar con esta
-franqueza: el criterio de selección de "modelo recomendado", fijado
-explícitamente ANTES de ver el conjunto de prueba (tal como exige la
-buena práctica que motivó toda esta corrección), eligió un modelo —CNN
-con CutMix— cuyas cifras detalladas por semilla revelan que había
-colapsado a predecir una sola clase en dos de las tres semillas. Lejos
-de ocultar o corregir retroactivamente esta paradoja, se documenta
-como lo que es: evidencia de que un criterio de sensibilidad sin
-ningún control de especificidad o balance entre clases puede, en la
-práctica, premiar al modelo más degenerado en vez de al mejor. Es una
-lección metodológica que vale la pena incluir explícitamente en la
-discusión del TFM, no solo en el apéndice técnico.
+franqueza, también en dos capas: el criterio de selección de "modelo
+recomendado" original (Fase 11), fijado explícitamente ANTES de ver el
+conjunto de prueba, eligió un modelo —CNN con CutMix (M3)— cuyas cifras
+detalladas por semilla revelaban que había colapsado a predecir una
+sola clase en dos de las tres semillas; la sensibilidad Maligno pura,
+sin control de especificidad, premiaba ese colapso. En vez de ocultar
+la paradoja, se corrigió el criterio (Fase 12): el índice de Youden de
+Maligno (sensibilidad + especificidad − 1), que un clasificador
+constante puntúa en 0 exactamente. El cambio se documentó como ocurrido
+DESPUÉS de una primera mirada al test bajo el criterio original —
+excepción real y declarada al principio de no mirar el test antes de
+fijar el criterio, no un ajuste buscando un resultado concreto. Con el
+nuevo criterio, el modelo recomendado es M5, que coincide con el mejor
+desempeño observado entre los modelos profundos — a diferencia de la
+Fase 11, donde el criterio recomendaba un modelo colapsado mientras el
+mejor desempeño real era de otro.
 
 Sobre explicabilidad: añadir Grad-CAM++ y Score-CAM junto al Grad-CAM
 original permitió confirmar, con tres métodos de mecanismo de cálculo
 muy distinto, que el patrón de mapa de calor "constante" (insensible
 al contenido real de la imagen) no es un artefacto de una técnica en
-particular, sino muy probablemente una propiedad estructural de cómo
-EfficientNetB0 integra información espacial en su última capa
-convolucional. Más grave aún: ninguno de los mapas evaluados (0 de 42)
+particular sobre M4, sino muy probablemente una propiedad estructural
+de cómo EfficientNetB0 integra información espacial en su última capa
+convolucional — confirmado también en M5 (Fase 12), el nuevo modelo
+recomendado, que reproduce el mismo patrón constante. El Grad-CAM de
+M1 (CNN propia, Fase 12) rompe ese patrón: su correlación entre clases
+es 0.111, muy por debajo de EfficientNet — sugiriendo que el patrón
+"constante" no es inevitable en toda arquitectura sobre estas imágenes.
+Más grave aún: ninguno de los mapas evaluados (0 de 51, incluyendo M1)
 concentra mayormente su energía dentro del tejido pulmonar real — una
 limitación de explicabilidad que, en el estado actual del sistema,
 impide por completo su uso como apoyo visual fiable para un
-radiólogo, independientemente del método de explicabilidad elegido.
+radiólogo, independientemente del método de explicabilidad o la
+arquitectura elegidos.
 
 La conclusión general se mantiene y se refuerza: el sistema es un
 PROTOTIPO ACADÉMICO que cumple su propósito de explorar, con rigor
-metodológico creciente a lo largo de dos rondas de corrección, el
-potencial y los límites de CNNs, transfer learning y una línea base
-clásica bien implementada sobre un dataset público reducido de TC de
-tórax. La corrección de la partición por paciente —el problema
-metodológico más grave identificado en todo el proyecto— no solo se
-implementó, sino que permitió cuantificar exactamente su efecto
-(SVM_grupos vs. SVM_imagen) en vez de solo señalarlo como una
-limitación teórica. Ese es, en sí mismo, uno de los aportes
-metodológicos más sólidos del trabajo.
+metodológico creciente a lo largo de varias rondas de corrección
+(incluida la honestidad de retractar una conclusión propia cuando un
+bug la invalidó), el potencial y los límites de CNNs, transfer
+learning y una línea base clásica bien implementada sobre un dataset
+público reducido de TC de tórax. La corrección de la partición por
+paciente —el problema metodológico más grave identificado en todo el
+proyecto— no solo se implementó, sino que permitió cuantificar
+exactamente su efecto (SVM_grupos vs. SVM_imagen) en vez de solo
+señalarlo como una limitación teórica. Ese es, en sí mismo, uno de los
+aportes metodológicos más sólidos del trabajo.
