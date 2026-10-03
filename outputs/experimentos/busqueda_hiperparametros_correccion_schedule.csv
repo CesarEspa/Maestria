@@ -1,0 +1,7 @@
+escenario,arquitectura,aumento,lr,dropout_bloques,f1_macro_val,sens_benigno_val,sens_maligno_val,sens_normal_val,tiempo_min,run_dir
+M1,cnn,,0.0003,0.25,0.24326018808777428,1.0,0.34146341463414637,0.0,98.7047027428945,C:\Users\Cesar\Desktop\MAESTRIA\tfm-lung-cancer\tfm-lung-cancer\outputs\experimentos\runs\M1_dropout_bloques0.25_lr0.0003_seed0
+M1,cnn,,0.0003,0.4,0.24326018808777428,1.0,0.34146341463414637,0.0,78.52484821081161,C:\Users\Cesar\Desktop\MAESTRIA\tfm-lung-cancer\tfm-lung-cancer\outputs\experimentos\runs\M1_dropout_bloques0.4_lr0.0003_seed0
+M1,cnn,,0.0001,0.25,0.585471738663228,0.5,0.8536585365853658,0.4915254237288136,69.99690366188685,C:\Users\Cesar\Desktop\MAESTRIA\tfm-lung-cancer\tfm-lung-cancer\outputs\experimentos\runs\M1_dropout_bloques0.25_lr0.0001_seed0
+M1,cnn,,0.0001,0.4,0.5854598617756513,0.4375,0.8414634146341463,0.5254237288135594,91.31533215840658,C:\Users\Cesar\Desktop\MAESTRIA\tfm-lung-cancer\tfm-lung-cancer\outputs\experimentos\runs\M1_dropout_bloques0.4_lr0.0001_seed0
+M2,cnn,geometrico,0.0001,0.25,0.35107270466386487,0.0,0.34146341463414637,0.8813559322033898,95.72634588082632,C:\Users\Cesar\Desktop\MAESTRIA\tfm-lung-cancer\tfm-lung-cancer\outputs\experimentos\runs\M2_aumentogeometrico_dropout_bloques0.25_lr0.0001_seed0
+M3,cnn,cutmix,0.0001,0.25,0.35107270466386487,0.0,0.34146341463414637,0.8813559322033898,98.15499976873397,C:\Users\Cesar\Desktop\MAESTRIA\tfm-lung-cancer\tfm-lung-cancer\outputs\experimentos\runs\M3_aumentocutmix_dropout_bloques0.25_lr0.0001_seed0

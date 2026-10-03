@@ -559,3 +559,65 @@ de M1-M3, nuevo criterio de Youden, Tarea 5 completa, y Grad-CAM de M1 y del mod
 recomendado — con commit y push al terminar cada paso.
 
 ---
+
+## Resultado: corrección v2 completada (`EarlyStoppingTrasMeseta`)
+
+`08d_correccion_schedule_cnn.py` terminó su ejecución completa sin detenerse (al menos
+una configuración de la rejilla M1 salió de la meseta, así que el criterio de parada
+no se activó). Resumen de resultados:
+
+**Rejilla M1 (semilla 0, 60 épocas máx.):**
+
+| lr | dropout_bloques | f1_macro_val | ¿Salió de la meseta? | Tiempo |
+|---|---|---|---|---|
+| 3e-4 | 0.25 | 0.2433 | No (60 épocas completas) | 98.7 min |
+| 3e-4 | 0.40 | 0.2433 | No (60 épocas completas) | 78.5 min |
+| 1e-4 | 0.25 | **0.5855** | Sí, época 26 | 70.0 min |
+| 1e-4 | 0.40 | 0.5855 | Sí, época 30 | 91.3 min |
+
+M1 elegido: lr=1e-4, dropout_bloques=0.25 (f1_macro_val=0.5855). A diferencia de la
+corrección v1 (donde esta misma configuración salía de la meseta en la época 27 con
+`EarlyStopping` estándar y arriesgaba cortarse por el patience antes de aprender), con
+`EarlyStoppingTrasMeseta` la paciencia no empieza a contar hasta que la red ya salió
+de la meseta, así que el run llegó sin problemas hasta el final.
+
+**M2 (aumento geométrico) y M3 (CutMix), semilla 0, con la config ganadora de M1:**
+
+- M2: f1_macro_val=0.3511, NO salió de la meseta en 60 épocas (95.7 min).
+- M3: f1_macro_val=0.3511, NO salió de la meseta en 60 épocas (98.2 min).
+
+**Decisión de aumento para M4** (recalculada tras la corrección de schedule): empate
+exacto entre M2 (geométrico) y M3 (CutMix), ambos con f1_macro_val=0.3511. Según la
+regla de decisión establecida, un empate no cambia la elección anterior → se conserva
+el aumento geométrico para M4/M5. Como el aumento no cambió, M4/M5 **no se
+reentrenan** — conservan los modelos y resultados ya existentes de las tareas
+anteriores.
+
+**M1, M2, M3 en semillas 1 y 2 (misma configuración ganadora):**
+
+| Modelo | Semilla | ¿Salió de la meseta? | Tiempo |
+|---|---|---|---|
+| M1 | 1 | No (60 épocas completas) | 74.1 min |
+| M1 | 2 | Sí (época ≤39, patience activó parada temprana) | 47.3 min |
+| M2 | 1 | No (60 épocas completas) | 74.1 min |
+| M2 | 2 | No (60 épocas completas) | 74.4 min |
+| M3 | 1 | No (60 épocas completas) | 73.2 min |
+| M3 | 2 | No (60 épocas completas) | 72.9 min |
+
+De las 9 corridas finales de M1/M2/M3 (3 modelos × 3 semillas), solo 2 (M1 semilla 0 y
+M1 semilla 2) salieron de la meseta de entrenamiento en 60 épocas; las otras 7 nunca
+cruzaron loss de entrenamiento < 1.0. Esto es consistente con el diagnóstico original:
+la CNN propia tiene mucha dificultad para aprender en este problema con los
+hiperparámetros probados, incluso con el schedule corregido — el callback ya no es la
+causa del estancamiento, pero no garantiza que la red aprenda, solo evita que la
+paciencia corte el entrenamiento antes de tener una oportunidad justa.
+
+Archivos actualizados: `hiperparametros_finales.json`,
+`busqueda_hiperparametros_correccion_schedule.csv`, `curvas_M1.png`, `curvas_M2.png`,
+`curvas_M3.png`. Las 12 nuevas corridas (6 de M1, 3 de M2, 3 de M3) quedan en
+`outputs/experimentos/runs/`.
+
+Continuando sin pausa, según instrucción del usuario: nuevo criterio de selección
+(Youden), reevaluación completa (Tarea 5), y Grad-CAM de M1 y del modelo recomendado.
+
+---

@@ -18,7 +18,7 @@
     "dropout_bloques": 0.25
   },
   "aumento_m4_elegido": "geometrico",
-  "aumento_m4_razon": "M2 (geometrico) f1_macro_val=0.4167 vs. M3 (cutmix) f1_macro_val=0.3789",
+  "aumento_m4_razon": "M2 (geometrico) f1_macro_val=0.3511 vs. M3 (cutmix) f1_macro_val=0.3511 [recalculado tras corrección de schedule]",
   "M4": {
     "arquitectura": "efficientnet",
     "aumento": "geometrico",
@@ -32,5 +32,6 @@
     "capas_descongeladas": 20
   },
   "semilla_busqueda": 0,
-  "tipo_particion": "grupos"
+  "tipo_particion": "grupos",
+  "correccion_schedule_cnn": true
 }

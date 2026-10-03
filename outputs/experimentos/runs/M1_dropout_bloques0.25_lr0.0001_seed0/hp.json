@@ -1,0 +1,19 @@
+{
+  "escenario": "M1",
+  "hp": {
+    "arquitectura": "cnn",
+    "aumento": null,
+    "lr": 0.0001,
+    "dropout_bloques": 0.25
+  },
+  "seed": 0,
+  "tipo_particion": "grupos",
+  "segmentado": false,
+  "epocas_efectivas": [
+    55
+  ],
+  "meseta": {
+    "salio_meseta": true,
+    "epoca_salida_meseta": 26
+  }
+}
