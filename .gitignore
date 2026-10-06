@@ -2,11 +2,15 @@
 # https://www.kaggle.com/datasets/hamdallak/the-iqothnccd-lung-cancer-dataset
 Datos/
 
+# Documentos de trabajo personales: se conservan en disco, no en el repositorio.
+PROMPT_CORRECCIONES_TUTORA.md
+PROYECTO_CLAUDE_CONTEXTO.txt
+
 # Estado de entrenamiento en vivo (JSON) y logs — se regeneran solos
 # cada vez que se lanza un entrenamiento desde alguna de las apps web.
 outputs/progress/
 
-# Modelos del protocolo corregido (correcciones tutora): decenas de runs
+# Modelos del protocolo corregido (correcciones del TFM): decenas de runs
 # (5 escenarios x hasta 3 semillas) pesarían varios cientos de MB en total.
 # Se suben predicciones/historiales/CSV/JSON/figuras (lo que hace falta
 # para el documento), no los pesos — reproducibles reejecutando entrenar().
